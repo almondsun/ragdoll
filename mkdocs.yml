@@ -1,0 +1,22 @@
+site_name: RAGdoll
+site_url: https://almondsun.github.io/ragdoll/
+repo_url: https://github.com/almondsun/ragdoll
+theme:
+  name: material
+  palette:
+    primary: blue grey
+    accent: teal
+nav:
+  - Home: index.md
+  - Planning contract: planning-contract.md
+  - Architecture: architecture.md
+  - Retrieval and ranking: retrieval-and-ranking.md
+  - Evaluation: evaluation.md
+  - Privacy: privacy.md
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format

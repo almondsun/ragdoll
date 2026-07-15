@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="title">
+  <title id="title">RAGdoll — explainable scholarly research from your terminal</title>
+  <rect width="1280" height="640" fill="#172a3a"/>
+  <circle cx="250" cy="320" r="210" fill="#f4ecd8"/>
+  <path d="M130 295 150 175l88 58c12-3 25-3 38 0l88-58 20 120c27 25 40 59 37 98-4 73-66 124-165 124S95 466 91 393c-3-39 12-73 39-98Z" fill="#172a3a" stroke="#b87333" stroke-width="9"/>
+  <path d="m159 200 57 39-73 39Zm194 0-57 39 73 39Z" fill="#2aa198"/>
+  <circle cx="201" cy="344" r="42" fill="#f4ecd8" stroke="#2aa198" stroke-width="8"/><circle cx="311" cy="344" r="42" fill="#f4ecd8" stroke="#2aa198" stroke-width="8"/>
+  <path d="M243 344h26" stroke="#2aa198" stroke-width="8"/><circle cx="210" cy="347" r="10" fill="#172a3a"/><circle cx="302" cy="347" r="10" fill="#172a3a"/>
+  <path d="m256 378-15 12 15 10 15-10Z" fill="#d99b62"/>
+  <text x="520" y="285" fill="#f4ecd8" font-size="112" font-family="ui-monospace, monospace" font-weight="700">RAGdoll</text>
+  <text x="525" y="360" fill="#2aa198" font-size="34" font-family="ui-sans-serif, sans-serif">Plan. Search. Stage. Understand.</text>
+  <text x="525" y="420" fill="#d9d5c9" font-size="27" font-family="ui-sans-serif, sans-serif">Explainable scholarly research from your terminal.</text>
+</svg>

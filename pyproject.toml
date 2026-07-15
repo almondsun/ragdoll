@@ -1,0 +1,68 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ragdoll-research"
+version = "0.1.0"
+description = "Turn a research question into an explainable, curated paper collection from your terminal."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "almondsun" }]
+keywords = ["research", "literature-review", "scholarly-search", "rag", "cli"]
+dependencies = [
+  "defusedxml>=0.7,<1",
+  "httpx>=0.27,<1",
+  "openai>=1.75,<3",
+  "platformdirs>=4.3,<5",
+  "prompt-toolkit>=3.0.47,<4",
+  "pydantic>=2.9,<3",
+  "rich>=13.9,<15",
+  "typer>=0.15,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+  "mypy>=1.13,<2",
+  "pip-audit>=2.9,<3",
+  "pytest>=9.0.3,<10",
+  "pytest-cov>=6,<8",
+  "respx>=0.22,<1",
+  "ruff>=0.9,<1",
+  "types-setuptools>=75",
+  "types-defusedxml>=0.7",
+]
+docs = ["mkdocs-material>=9.6,<10"]
+
+[project.scripts]
+ragdoll = "ragdoll.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ragdoll"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["ragdoll"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers --strict-config"
+
+[tool.coverage.run]
+branch = true
+source = ["ragdoll"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true

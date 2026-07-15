@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">RAGdoll patchwork research cat</title>
+  <desc id="desc">A curious stitched cat wearing spectacles and carrying scholarly papers.</desc>
+  <rect width="512" height="512" rx="96" fill="#f4ecd8"/>
+  <path d="M111 205 135 74l99 65c15-4 29-4 44 0l99-65 24 131c30 28 45 66 42 111-5 82-75 140-187 140S74 398 69 316c-3-45 12-83 42-111Z" fill="#172a3a" stroke="#b87333" stroke-width="10"/>
+  <path d="m145 103 65 44-84 45Z" fill="#2aa198"/><path d="m367 103-65 44 84 45Z" fill="#d99b62"/>
+  <path d="M256 139v85M215 159l41 21 41-21" fill="none" stroke="#b87333" stroke-width="7" stroke-dasharray="12 10"/>
+  <circle cx="194" cy="259" r="48" fill="#f4ecd8" stroke="#2aa198" stroke-width="9"/><circle cx="318" cy="259" r="48" fill="#f4ecd8" stroke="#2aa198" stroke-width="9"/>
+  <path d="M242 259h28" stroke="#2aa198" stroke-width="9"/><circle cx="204" cy="263" r="12" fill="#172a3a"/><circle cx="308" cy="263" r="12" fill="#172a3a"/>
+  <path d="m256 297-17 14 17 11 17-11Z" fill="#d99b62"/><path d="M256 322c-7 20-30 24-45 11m45-11c7 20 30 24 45 11" fill="none" stroke="#f4ecd8" stroke-width="7" stroke-linecap="round"/>
+  <path d="M143 349c34 11 52 31 60 61m166-61c-34 11-52 31-60 61" fill="none" stroke="#b87333" stroke-width="7" stroke-dasharray="12 9"/>
+  <path d="M337 355h104v83H337z" fill="#d99b62" stroke="#172a3a" stroke-width="8"/><path d="M352 337h74v69h-74z" fill="#fffdf7" stroke="#172a3a" stroke-width="7"/><path d="M366 357h45m-45 15h45m-45 15h34" stroke="#2aa198" stroke-width="6"/>
+</svg>
