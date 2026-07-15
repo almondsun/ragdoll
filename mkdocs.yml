@@ -3,6 +3,8 @@ site_url: https://almondsun.github.io/ragdoll/
 repo_url: https://github.com/almondsun/ragdoll
 theme:
   name: material
+  logo: assets/ragdoll-mascot.svg
+  favicon: assets/ragdoll-mascot.png
   palette:
     primary: blue grey
     accent: teal

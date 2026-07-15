@@ -1,18 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
-  <title id="title">RAGdoll</title>
-  <desc id="desc">Plan, search, stage, and understand scholarly research from the terminal.</desc>
-  <rect width="1280" height="640" fill="#172a3a"/>
-  <rect x="70" y="70" width="500" height="500" rx="96" fill="#fffaf0"/>
-  <g transform="translate(86 86) scale(.97)" stroke="#172a3a" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">RAGdoll minimalist research mascot</title>
+  <desc id="desc">A thoughtful patchwork rag doll with button eyes, round spectacles, and a research satchel.</desc>
+  <rect width="512" height="512" rx="96" fill="#fffaf0"/>
+  <g stroke="#172a3a" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
     <path d="M151 475c-14-58-1-111 38-139 19-14 43-21 67-21s48 7 67 21c39 28 52 81 38 139Z" fill="#f4ecd8"/>
     <path d="M184 342c18 18 45 27 72 27s54-9 72-27l-17-35H201Z" fill="#507f82"/>
     <path d="M127 201c0-75 57-136 129-136s129 61 129 136-57 136-129 136-129-61-129-136Z" fill="#f4ecd8"/>
     <path d="M132 169c13-51 51-91 100-101l12 56-92 88-25-3c0-14 2-27 5-40Z" fill="#507f82"/>
     <path d="m232 68 12 56-92 88" fill="none"/>
     <path d="m229 94 18 4m-32 11 16 11m-32 8 14 13" fill="none" stroke="#b87333" stroke-width="8"/>
-    <circle cx="201" cy="215" r="48" fill="#fffaf0"/><circle cx="311" cy="215" r="48" fill="#fffaf0"/>
+    <circle cx="201" cy="215" r="48" fill="#fffaf0"/>
+    <circle cx="311" cy="215" r="48" fill="#fffaf0"/>
     <path d="M249 215h14M153 215h-18m224 0h18" fill="none"/>
-    <circle cx="201" cy="215" r="24" fill="#172a3a"/><circle cx="311" cy="215" r="24" fill="#172a3a"/>
+    <circle cx="201" cy="215" r="24" fill="#172a3a"/>
+    <circle cx="311" cy="215" r="24" fill="#172a3a"/>
     <path d="m191 205 20 20m0-20-20 20m110-20 20 20m0-20-20 20" fill="none" stroke="#d99b62" stroke-width="8"/>
     <path d="M227 278c17 13 41 13 58 0" fill="none"/>
     <path d="M316 452 208 342" fill="none" stroke="#b87333" stroke-width="20"/>
@@ -20,7 +21,4 @@
     <path d="M342 291c22 6 40 25 45 48 5 25-5 48-24 62l-43-30c15-13 19-32 10-49-5-10-12-17-22-22Z" fill="#507f82"/>
     <path d="M302 277c12-9 29-7 39 4l28 32c10 12 8 29-4 39-12 9-29 7-39-5l-28-32c-10-11-8-29 4-38Z" fill="#f4ecd8"/>
   </g>
-  <text x="650" y="284" fill="#f4ecd8" font-size="108" font-family="ui-monospace, monospace" font-weight="700">RAGdoll</text>
-  <text x="655" y="356" fill="#55aaa6" font-size="33" font-family="ui-sans-serif, sans-serif">Plan. Search. Stage. Understand.</text>
-  <text x="655" y="418" fill="#d9d5c9" font-size="26" font-family="ui-sans-serif, sans-serif">Explainable scholarly research from your terminal.</text>
 </svg>

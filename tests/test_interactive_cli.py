@@ -184,8 +184,10 @@ def test_mascot_static_and_animated(monkeypatch: pytest.MonkeyPatch) -> None:
         pass
     mascot.result("Done")
     mascot.result("Failed", success=False)
-    assert "RAGdoll" in output.getvalue()
-    assert "Thinking" in output.getvalue()
+    rendered = output.getvalue()
+    assert "RAGdoll" in rendered
+    assert "(x)-(x)" in rendered
+    assert "Thinking" in rendered
 
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)

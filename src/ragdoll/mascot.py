@@ -1,4 +1,4 @@
-"""Scrollback-safe patchwork-cat terminal companion."""
+"""Scrollback-safe patchwork rag-doll terminal companion."""
 
 from __future__ import annotations
 
@@ -12,20 +12,21 @@ from rich.console import Console, Group
 from rich.live import Live
 from rich.text import Text
 
-WELCOME = r"""
-   /\_/\      .----------------.
-  ( o.o )  __/  curious minds   |
-   > ^ <  /__   leave a trail.  |
-  /|_✕_|\/   '-----------------'
-   /   \      RAGdoll
-""".strip("\n")
+WELCOME = r'''
+    .-""""-.      .----------------.
+   /_x___x_\   __/  curious minds   |
+  | (x)-(x) | /__   leave a trail.  |
+  |    _   ( )   '-----------------'
+   \__|_|__/       RAGdoll
+     /|_|
+'''.strip("\n")
 
 FRAMES = {
-    "planning": [r" /\_/\  ?", r" /\_/\  ??", r" /\_/\  ???"],
-    "searching": [r" /\_/\  ≋", r" /\_/\  ≋≋", r" /\_/\  ≋≋≋"],
-    "staging": [r" /\_/\  [·  ]", r" /\_/\  [·· ]", r" /\_/\  [···]"],
-    "success": [r" /\_/\  ✓", r" /\_/\  ✓✓"],
-    "error": [r" /\_/\  !", r" /\_/\  !!"],
+    "planning": [r" (x)-(x)  ?", r" (x)-(x)  ??", r" (x)-(x)  ???"],
+    "searching": [r" (x)-(x)  ≋", r" (x)-(x)  ≋≋", r" (x)-(x)  ≋≋≋"],
+    "staging": [r" (x)-(x)  [·  ]", r" (x)-(x)  [·· ]", r" (x)-(x)  [···]"],
+    "success": [r" (x)-(x)  ✓", r" (x)-(x)  ✓✓"],
+    "error": [r" (x)-(x)  !", r" (x)-(x)  !!"],
 }
 
 

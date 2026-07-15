@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/ragdoll-cat.svg" alt="RAGdoll patchwork research cat" width="160">
+  <img src="docs/assets/ragdoll-mascot.svg" alt="RAGdoll minimalist research rag doll" width="160">
   <h1>RAGdoll</h1>
   <p><strong>Turn a research question into an explainable, curated paper collection—from your terminal.</strong></p>
   <p>Adaptive scoping, editable search plans, cross-disciplinary discovery, transparent ranking, and reproducible exports.</p>
