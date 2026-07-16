@@ -218,6 +218,13 @@ async def test_resume_collection_commands_and_migration_hints(
 
         papers_command = application.run_worker(application._handle_submission("/papers"))
         await wait_for(pilot, lambda: isinstance(application.screen, PapersScreen))
+        await wait_for(
+            pilot,
+            lambda: (
+                application.screen.query_one("#paper-list", SelectionList).option_count
+                == len(investigation.papers)
+            ),
+        )
         listing = application.screen.query_one("#paper-list", SelectionList)
         listing.toggle(investigation.papers[0].paper.id)
         await pilot.press("f")
