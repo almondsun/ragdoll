@@ -76,7 +76,10 @@ class OllamaProvider:
                 {"role": "system", "content": instructions},
                 {"role": "user", "content": prompt},
             ],
-            "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 768},
+            # Research plans can legitimately exceed the shorter interactive-response
+            # budget. Keep generation bounded, but leave enough room to finish the
+            # schema instead of returning syntactically truncated JSON.
+            "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 2048},
         }
         last_error: Exception | None = None
         for _ in range(2):

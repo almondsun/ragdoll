@@ -40,6 +40,7 @@ def test_ollama_structured_and_retry(brief) -> None:
         payload = request.read().decode()
         assert '"think":false' in payload
         assert '"num_ctx":8192' in payload
+        assert '"num_predict":2048' in payload
         if calls == 1:
             return httpx.Response(200, json={"message": {"content": "invalid"}})
         return httpx.Response(200, json={"message": {"content": brief.model_dump_json()}})
