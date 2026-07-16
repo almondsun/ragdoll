@@ -1,4 +1,4 @@
-"""Fullscreen conversation-first terminal interface for RAGdoll 2.0."""
+"""Fullscreen conversation-first terminal interface for RAGdoll 2.1."""
 
 from __future__ import annotations
 

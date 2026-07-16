@@ -19,6 +19,6 @@ Start with the [planning contract](planning-contract.md), then read the
 [architecture](architecture.md), [retrieval methodology](retrieval-and-ranking.md), and
 [evidence contract](evidence-and-dossiers.md).
 
-RAGdoll 2.0 presents this workflow through a fullscreen, conversation-first interface. Read the
+RAGdoll 2.1 presents this workflow through a fullscreen, conversation-first interface. Read the
 [terminal experience and v1 migration guide](terminal-experience.md) before using or extending the
 interactive surface.
