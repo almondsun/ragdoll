@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
@@ -17,6 +18,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from .config import Settings
+from .contracts import staged_fingerprint
 from .domain import (
     DocumentStatus,
     EvidenceChunk,
@@ -25,6 +27,7 @@ from .domain import (
     Investigation,
     Paper,
 )
+from .safe_io import atomic_write
 from .storage import Workspace
 
 
@@ -127,17 +130,24 @@ class EvidenceService:
         self.workspace = workspace
         self.fetcher = fetcher or FullTextFetcher(settings)
 
-    def acquire(self, investigation: Investigation) -> tuple[list[EvidenceDocument], list[str]]:
+    def acquire(
+        self, investigation: Investigation, acquisition_fingerprint: str | None = None
+    ) -> tuple[list[EvidenceDocument], list[str]]:
         staged = [item.paper for item in investigation.papers if item.staged]
         staged = staged[: self.settings.dossier_paper_limit]
         documents: list[EvidenceDocument] = []
         warnings: list[str] = []
         for paper in staged:
             existing = self.workspace.document_for(investigation.id, paper.id)
-            if existing and existing.status != DocumentStatus.FAILED:
+            fingerprint = acquisition_fingerprint or staged_fingerprint(investigation)
+            if (
+                existing
+                and existing.status != DocumentStatus.FAILED
+                and existing.staged_fingerprint == fingerprint
+            ):
                 documents.append(existing)
                 continue
-            document, chunks, warning = self._acquire_paper(investigation.id, paper)
+            document, chunks, warning = self._acquire_paper(investigation.id, paper, fingerprint)
             self.workspace.save_document(document, chunks)
             documents.append(document)
             if warning:
@@ -145,7 +155,7 @@ class EvidenceService:
         return documents, warnings
 
     def _acquire_paper(
-        self, investigation_id: str, paper: Paper
+        self, investigation_id: str, paper: Paper, fingerprint: str
     ) -> tuple[EvidenceDocument, list[EvidenceChunk], str | None]:
         errors: list[str] = []
         for candidate in paper.fulltext_candidates:
@@ -171,6 +181,7 @@ class EvidenceService:
                         byte_count=len(content),
                         page_count=len(pages),
                         relative_path=str(relative),
+                        staged_fingerprint=fingerprint,
                     )
                     chunks = _page_chunks(document, pages)
                     if not chunks:
@@ -182,19 +193,27 @@ class EvidenceService:
             except (EvidenceError, OSError) as error:
                 errors.append(f"{candidate.source}: {error}")
         if paper.abstract:
-            document = _fallback_document(investigation_id, paper, EvidenceLevel.ABSTRACT, errors)
+            document = _fallback_document(
+                investigation_id, paper, EvidenceLevel.ABSTRACT, errors, fingerprint
+            )
             return document, _abstract_chunks(document, paper.abstract), _warning(paper, errors)
-        document = _fallback_document(investigation_id, paper, EvidenceLevel.METADATA, errors)
+        document = _fallback_document(
+            investigation_id, paper, EvidenceLevel.METADATA, errors, fingerprint
+        )
         return document, [], _warning(paper, errors or ["no abstract or open full text"])
 
     def _extract(self, path: Path, digest: str) -> list[tuple[int, str]]:
-        output = path.with_name(f"{digest}.json")
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=".extract-", suffix=".json", dir=path.parent
+        )
+        output = Path(temporary)
         command = [
             sys.executable,
             "-I",
             str(Path(__file__).with_name("pdf_worker.py")),
             str(path),
-            str(output),
+            "--output-fd",
+            str(descriptor),
             "--max-pages",
             str(self.settings.fulltext_max_pages),
             "--max-memory-mib",
@@ -205,32 +224,59 @@ class EvidenceService:
             str(self.settings.extraction_max_output_bytes),
         ]
         try:
-            result = subprocess.run(
-                command,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=self.settings.extraction_timeout_seconds,
-                check=False,
-            )
-        except subprocess.TimeoutExpired as error:
-            raise EvidenceError("PDF extraction timed out") from error
-        if result.returncode != 0:
-            detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "unknown"
-            raise EvidenceError(f"PDF extraction failed: {detail[:200]}")
-        try:
-            if output.stat().st_size > self.settings.extraction_max_output_bytes:
+            try:
+                process = subprocess.Popen(
+                    command,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    pass_fds=(descriptor,),
+                )
+            except OSError as error:
+                raise EvidenceError("PDF extractor could not be started") from error
+            captured = bytearray()
+
+            def drain() -> None:
+                assert process.stderr is not None
+                while block := process.stderr.read(4096):
+                    remaining = 8192 - len(captured)
+                    if remaining > 0:
+                        captured.extend(block[:remaining])
+
+            reader = threading.Thread(target=drain, daemon=True)
+            reader.start()
+            try:
+                process.wait(timeout=self.settings.extraction_timeout_seconds)
+            except subprocess.TimeoutExpired as error:
+                process.kill()
+                process.wait()
+                reader.join()
+                raise EvidenceError("PDF extraction timed out") from error
+            reader.join()
+            if process.returncode != 0:
+                stderr = captured.decode(errors="replace").strip()
+                detail = stderr.splitlines()[-1] if stderr else "unknown"
+                raise EvidenceError(f"PDF extraction failed: {detail[:200]}")
+            if os.fstat(descriptor).st_size > self.settings.extraction_max_output_bytes:
                 raise EvidenceError("PDF extractor output exceeded the configured byte limit")
-            data = json.loads(output.read_text(encoding="utf-8"))
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            payload = os.read(descriptor, self.settings.extraction_max_output_bytes + 1)
+            if len(payload) > self.settings.extraction_max_output_bytes:
+                raise EvidenceError("PDF extractor output exceeded the configured byte limit")
+            data = json.loads(payload.decode())
             return [(int(page["page"]), str(page["text"])) for page in data["pages"]]
         except (OSError, ValueError, KeyError, TypeError) as error:
             raise EvidenceError("PDF extractor returned invalid output") from error
         finally:
+            os.close(descriptor)
             output.unlink(missing_ok=True)
 
 
 def _fallback_document(
-    investigation_id: str, paper: Paper, level: EvidenceLevel, errors: list[str]
+    investigation_id: str,
+    paper: Paper,
+    level: EvidenceLevel,
+    errors: list[str],
+    fingerprint: str,
 ) -> EvidenceDocument:
     digest = hashlib.sha256(f"{investigation_id}:{paper.id}:{level}".encode()).hexdigest()
     return EvidenceDocument(
@@ -244,6 +290,7 @@ def _fallback_document(
         if level == EvidenceLevel.ABSTRACT
         else DocumentStatus.FAILED,
         error="; ".join(errors)[:500] or None,
+        staged_fingerprint=fingerprint,
     )
 
 
@@ -311,23 +358,11 @@ def _validate_public_address(address: str, message: str) -> None:
 
 
 def _write_cache(destination: Path, content: bytes, workspace: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    destination.parent.chmod(0o700)
     root = workspace.resolve()
-    parent = destination.parent.resolve()
+    parent = destination.parent.absolute()
     if not parent.is_relative_to(root):
         raise EvidenceError("document cache path escapes the workspace")
-    descriptor, temporary = tempfile.mkstemp(prefix=".download-", dir=parent)
     try:
-        os.chmod(temporary, 0o600)
-        with os.fdopen(descriptor, "wb") as handle:
-            descriptor = -1
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, destination)
-    except Exception:
-        if descriptor >= 0:
-            os.close(descriptor)
-        Path(temporary).unlink(missing_ok=True)
-        raise
+        atomic_write(destination, content)
+    except OSError as error:
+        raise EvidenceError(str(error)) from error

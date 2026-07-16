@@ -13,7 +13,7 @@ from xml.etree.ElementTree import Element
 import httpx
 from defusedxml import ElementTree as ET
 
-from .domain import FullTextCandidate, Paper
+from .domain import FullTextCandidate, Paper, RetrievalHit
 
 DOI_PREFIX = "https://doi.org/"
 
@@ -26,7 +26,13 @@ class ScholarlySource(ABC):
     name: str
 
     @abstractmethod
-    def search(self, query: str, limit: int = 25) -> list[Paper]: ...
+    def search(
+        self,
+        query: str,
+        limit: int = 25,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[Paper]: ...
 
 
 class OpenAlexSource(ScholarlySource):
@@ -36,8 +42,21 @@ class OpenAlexSource(ScholarlySource):
         self.client = client or httpx.Client(timeout=30)
         self.mailto = mailto
 
-    def search(self, query: str, limit: int = 25) -> list[Paper]:
+    def search(
+        self,
+        query: str,
+        limit: int = 25,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[Paper]:
         params: dict[str, str | int] = {"search": query, "per-page": min(limit, 100)}
+        filters = []
+        if date_from:
+            filters.append(f"from_publication_date:{date_from.isoformat()}")
+        if date_to:
+            filters.append(f"to_publication_date:{date_to.isoformat()}")
+        if filters:
+            params["filter"] = ",".join(filters)
         if self.mailto:
             params["mailto"] = self.mailto
         try:
@@ -74,6 +93,10 @@ class OpenAlexSource(ScholarlySource):
             sources={self.name},
             queries={query},
             source_ranks=[rank],
+            retrieval_hits=[
+                RetrievalHit(source=self.name, source_id=str(item["id"]), query=query, rank=rank)
+            ],
+            provenance_complete=True,
             fulltext_candidates=fulltext_candidates,
         )
 
@@ -85,10 +108,21 @@ class ArxivSource(ScholarlySource):
     def __init__(self, client: httpx.Client | None = None) -> None:
         self.client = client or httpx.Client(timeout=30)
 
-    def search(self, query: str, limit: int = 25) -> list[Paper]:
+    def search(
+        self,
+        query: str,
+        limit: int = 25,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[Paper]:
+        search_query = f"all:{quote(query)}"
+        if date_from or date_to:
+            lower = (date_from or date(1900, 1, 1)).strftime("%Y%m%d0000")
+            upper = (date_to or date.today()).strftime("%Y%m%d2359")
+            search_query = f"({search_query}) AND submittedDate:[{lower} TO {upper}]"
         url = (
-            "https://export.arxiv.org/api/query?search_query=all:"
-            f"{quote(query)}&start=0&max_results={min(limit, 100)}&sortBy=relevance"
+            "https://export.arxiv.org/api/query?search_query="
+            f"{search_query}&start=0&max_results={min(limit, 100)}&sortBy=relevance"
         )
         try:
             response = self.client.get(url)
@@ -117,6 +151,15 @@ class ArxivSource(ScholarlySource):
                     sources={self.name},
                     queries={query},
                     source_ranks=[rank],
+                    retrieval_hits=[
+                        RetrievalHit(
+                            source=self.name,
+                            source_id=identifier,
+                            query=query,
+                            rank=rank,
+                        )
+                    ],
+                    provenance_complete=True,
                     fulltext_candidates=[
                         FullTextCandidate(
                             url=f"https://arxiv.org/pdf/{identifier}",
@@ -155,14 +198,39 @@ class CrossrefSource:
 
 
 def search_all(
-    sources: list[ScholarlySource], queries: list[str], limit: int = 25
+    sources: list[ScholarlySource],
+    queries: list[str],
+    limit: int = 25,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> tuple[list[Paper], list[str]]:
     papers: list[Paper] = []
     warnings: list[str] = []
     for query in queries:
         for source in sources:
             try:
-                papers.extend(source.search(query, limit))
+                if date_from or date_to:
+                    results = source.search(query, limit, date_from=date_from, date_to=date_to)
+                else:
+                    results = source.search(query, limit)
+                for paper in results:
+                    if date_from or date_to:
+                        if paper.publication_date is None:
+                            warnings.append(
+                                f"{source.name}: excluded {paper.id}; publication date is unknown"
+                            )
+                            continue
+                        if date_from and paper.publication_date < date_from:
+                            warnings.append(
+                                f"{source.name}: excluded {paper.id}; before approved date range"
+                            )
+                            continue
+                        if date_to and paper.publication_date > date_to:
+                            warnings.append(
+                                f"{source.name}: excluded {paper.id}; after approved date range"
+                            )
+                            continue
+                    papers.append(paper)
             except SourceError as error:
                 warnings.append(str(error))
             time.sleep(0.05)

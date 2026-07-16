@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — v2.2 contract hardening
+
+- Enforce persisted, fingerprinted plan and evidence approvals in the service layer; invalidate
+  dossiers and grounded answers whenever the staged corpus changes.
+- Enforce approved discovery sources and inclusive date bounds at provider and normalized-result
+  boundaries, and retain exact per-hit retrieval provenance through deduplication and RRF.
+- Require explicit user opt-in for remote Ollama endpoints, disclose the actual inference
+  destination, reject symlinked workspace/write paths, and bound parser settings and stderr capture.
+- Add a reproducible three-arm live benchmark, blinded maintainer adjudication worksheet, and
+  fail-closed v2.2 release gates. The version remains unreleased until those gates pass.
+
 ## 2.1.0 — 2026-07-15
 
 - Replaced the block-pixel cat with the portable `3 x 2` M2 companion and matching minimal public

@@ -6,5 +6,8 @@ the client appends a fourth custom-answer option. Previously answered dimensions
 
 The interview stops when the request is sufficiently scoped or after six questions. It produces a
 durable research brief, followed by an editable plan containing investigation axes, inclusion and
-exclusion criteria, query families, sources, and ranking priorities. Search is an explicit approved
-transition, not an inferred permission.
+exclusion criteria, query families, discovery sources, separately disclosed metadata enrichers,
+and ranking priorities. The review shows date bounds and both source classes. Approval persists the
+SHA-256 fingerprint of the brief and plan; any revision creates a different contract and requires a
+new approval. The service enforces this invariant for every caller, so search is an explicit approved
+transition rather than a TUI convention.

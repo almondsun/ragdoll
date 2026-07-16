@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import stat
 import subprocess
 import sys
 from contextlib import closing
+from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
 
@@ -195,11 +197,13 @@ def test_workspace_migrates_v1_schema(tmp_path: Path) -> None:
     assert {"evidence_documents", "evidence_chunks", "dossiers"} <= tables
 
 
-def evidence_records(investigation_id: str = "abc123") -> tuple[EvidenceDocument, EvidenceChunk]:
+def evidence_records(
+    investigation_id: str = "abc123", paper_id: str = "paper-1"
+) -> tuple[EvidenceDocument, EvidenceChunk]:
     document = EvidenceDocument(
         id="doc-1",
         investigation_id=investigation_id,
-        paper_id="paper-1",
+        paper_id=paper_id,
         source="fixture",
         evidence_level=EvidenceLevel.ABSTRACT,
         status=DocumentStatus.FALLBACK,
@@ -207,7 +211,7 @@ def evidence_records(investigation_id: str = "abc123") -> tuple[EvidenceDocument
     chunk = EvidenceChunk(
         id="chunk-1",
         investigation_id=investigation_id,
-        paper_id="paper-1",
+        paper_id=paper_id,
         document_id=document.id,
         locator="abstract",
         evidence_level=EvidenceLevel.ABSTRACT,
@@ -234,6 +238,11 @@ def test_workspace_indexes_isolates_exports_and_purges(tmp_path: Path, investiga
         investigation.id, "temporally coherent", limit=2, per_paper_limit=1
     )
     assert {item.paper_id for item in diverse} == {"paper-1", "paper-2"}
+    assert workspace.search_chunks(
+        investigation.id,
+        "temporally coherent",
+        paper_ids={"paper-2"},
+    ) == [second_chunk]
     assert workspace.search_chunks("other", "temporally coherent") == []
     dossier = ResearchDossier(
         title="Dossier",
@@ -423,24 +432,35 @@ def test_extractor_failures_chunking_and_cache_guards(
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-fixture")
 
-    def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired("worker", 1)
+    class Process:
+        def __init__(self, returncode: int = 0, stderr: bytes = b"", timeout: bool = False):
+            self.returncode = returncode
+            self.stderr = BytesIO(stderr)
+            self.timeout = timeout
+            self.killed = False
 
-    monkeypatch.setattr("ragdoll.evidence.subprocess.run", timeout)
+        def wait(self, timeout=None):
+            if self.timeout and not self.killed:
+                raise subprocess.TimeoutExpired("worker", timeout)
+            return self.returncode
+
+        def kill(self):
+            self.killed = True
+
+    monkeypatch.setattr(
+        "ragdoll.evidence.subprocess.Popen", lambda *args, **kwargs: Process(timeout=True)
+    )
     with pytest.raises(EvidenceError, match="timed out"):
         service._extract(pdf, "a" * 64)
 
     monkeypatch.setattr(
-        "ragdoll.evidence.subprocess.run",
-        lambda *args, **kwargs: subprocess.CompletedProcess([], 1, stderr="bad pdf"),
+        "ragdoll.evidence.subprocess.Popen",
+        lambda *args, **kwargs: Process(1, b"bad pdf"),
     )
     with pytest.raises(EvidenceError, match="bad pdf"):
         service._extract(pdf, "b" * 64)
 
-    monkeypatch.setattr(
-        "ragdoll.evidence.subprocess.run",
-        lambda *args, **kwargs: subprocess.CompletedProcess([], 0),
-    )
+    monkeypatch.setattr("ragdoll.evidence.subprocess.Popen", lambda *args, **kwargs: Process(0))
     with pytest.raises(EvidenceError, match="invalid output"):
         service._extract(pdf, "c" * 64)
 
@@ -469,6 +489,13 @@ def test_pdf_worker_entrypoint_and_page_limit(
         worker_extract(source, output, 0)
     with pytest.raises(ValueError, match="output byte limit"):
         worker_extract(source, output, 1, max_output_bytes=1)
+    descriptor = os.open(tmp_path / "fd-output.json", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        worker_extract(source, None, 1, output_fd=descriptor)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        assert b'"page": 1' in os.read(descriptor, 100_000)
+    finally:
+        os.close(descriptor)
     monkeypatch.setattr("ragdoll.pdf_worker._apply_resource_limits", lambda *args: None)
     monkeypatch.setattr(
         sys,
@@ -496,7 +523,7 @@ def test_synthesis_checkpoints_validates_citations_and_answers(
 ) -> None:
     workspace = Workspace(tmp_path)
     workspace.save(investigation)
-    document, chunk = evidence_records(investigation.id)
+    document, chunk = evidence_records(investigation.id, investigation.papers[0].paper.id)
     workspace.save_document(document, [chunk])
     section = DraftSection(
         claims=[GroundedClaim(text="Video diffusion addresses coherence.", chunk_ids=[chunk.id])]
@@ -547,7 +574,7 @@ def test_synthesis_reports_insufficient_evidence(tmp_path: Path, investigation) 
 def test_empty_draft_answer_is_normalized_to_insufficiency(tmp_path: Path, investigation) -> None:
     workspace = Workspace(tmp_path)
     workspace.save(investigation)
-    document, chunk = evidence_records(investigation.id)
+    document, chunk = evidence_records(investigation.id, investigation.papers[0].paper.id)
     workspace.save_document(document, [chunk])
 
     answer = Synthesizer(
@@ -561,7 +588,7 @@ def test_empty_draft_answer_is_normalized_to_insufficiency(tmp_path: Path, inves
 def test_open_question_section_is_repaired(tmp_path: Path, investigation) -> None:
     workspace = Workspace(tmp_path)
     workspace.save(investigation)
-    document, chunk = evidence_records(investigation.id)
+    document, chunk = evidence_records(investigation.id, investigation.papers[0].paper.id)
     workspace.save_document(document, [chunk])
     factual = DraftSection(
         claims=[GroundedClaim(text="Coherence is discussed.", chunk_ids=[chunk.id])]
@@ -582,6 +609,7 @@ def test_service_builds_abstract_dossier_end_to_end(tmp_path: Path, investigatio
     section = DraftSection(claims=[])
     service = ResearchService(tmp_path, Settings(), FakeProvider([section] * 7))
     service.workspace.save(investigation)
+    service.approve_evidence(investigation)
     updated, dossier, warnings = service.build_dossier(investigation)
     assert warnings == []
     assert updated.dossier_status == "ready"
@@ -592,7 +620,7 @@ def test_service_builds_abstract_dossier_end_to_end(tmp_path: Path, investigatio
 def test_dossier_resumes_from_section_checkpoint(tmp_path: Path, investigation) -> None:
     workspace = Workspace(tmp_path)
     workspace.save(investigation)
-    document, chunk = evidence_records(investigation.id)
+    document, chunk = evidence_records(investigation.id, investigation.papers[0].paper.id)
     workspace.save_document(document, [chunk])
     section = DraftSection(
         claims=[GroundedClaim(text="Coherence is discussed.", chunk_ids=[chunk.id])]
