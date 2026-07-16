@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -66,6 +66,18 @@ class QueryFamily(BaseModel):
     rationale: str = Field(min_length=1, max_length=300)
 
 
+DiscoverySource = Literal["openalex", "arxiv"]
+MetadataSource = Literal["crossref"]
+
+
+def _default_discovery_sources() -> list[DiscoverySource]:
+    return ["openalex", "arxiv"]
+
+
+def _default_metadata_sources() -> list[MetadataSource]:
+    return ["crossref"]
+
+
 class ResearchPlan(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     research_questions: list[str] = Field(min_length=1, max_length=8)
@@ -73,11 +85,11 @@ class ResearchPlan(BaseModel):
     inclusion_criteria: list[str] = Field(default_factory=list)
     exclusion_criteria: list[str] = Field(default_factory=list)
     query_families: list[QueryFamily] = Field(min_length=1, max_length=12)
-    sources: list[str] = Field(default_factory=lambda: ["openalex", "arxiv"], min_length=1)
-    metadata_sources: list[str] = Field(default_factory=lambda: ["crossref"])
+    sources: list[DiscoverySource] = Field(default_factory=_default_discovery_sources, min_length=1)
+    metadata_sources: list[MetadataSource] = Field(default_factory=_default_metadata_sources)
     ranking_priorities: list[str] = Field(default_factory=list)
 
-    @field_validator("sources")
+    @field_validator("sources", mode="before")
     @classmethod
     def discovery_sources_are_supported(cls, values: list[str]) -> list[str]:
         normalized = list(dict.fromkeys(value.casefold().strip() for value in values))
@@ -86,7 +98,7 @@ class ResearchPlan(BaseModel):
             raise ValueError(f"unsupported discovery sources: {', '.join(unsupported)}")
         return normalized
 
-    @field_validator("metadata_sources")
+    @field_validator("metadata_sources", mode="before")
     @classmethod
     def metadata_sources_are_supported(cls, values: list[str]) -> list[str]:
         normalized = list(dict.fromkeys(value.casefold().strip() for value in values))
