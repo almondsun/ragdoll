@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
-from .domain import Investigation, RankedPaper
+from .domain import EvidenceChunk, GroundedAnswer, Investigation, RankedPaper, ResearchDossier
 
 
 def export_investigation(investigation: Investigation, output: Path, format: str) -> Path:
-    output.parent.mkdir(parents=True, exist_ok=True)
+    output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if format == "json":
         output.write_text(investigation.model_dump_json(indent=2), encoding="utf-8")
     elif format == "markdown":
@@ -18,6 +19,7 @@ def export_investigation(investigation: Investigation, output: Path, format: str
         output.write_text(_bibtex(investigation.papers), encoding="utf-8")
     else:
         raise ValueError(f"unsupported export format: {format}")
+    os.chmod(output, 0o600)
     return output
 
 
@@ -89,3 +91,86 @@ def _bibtex(papers: list[RankedPaper]) -> str:
         body = ",\n".join(f"  {name} = {{{value}}}" for name, value in fields.items() if value)
         entries.append(f"@article{{{key},\n{body}\n}}")
     return "\n\n".join(entries) + ("\n" if entries else "")
+
+
+def export_dossier(
+    dossier: ResearchDossier,
+    investigation: Investigation,
+    chunks: dict[str, EvidenceChunk],
+    output: Path,
+    format: str,
+) -> Path:
+    output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if format == "json":
+        payload = {
+            "dossier": dossier.model_dump(mode="json"),
+            "citations": {
+                chunk_id: chunk.model_dump(mode="json") for chunk_id, chunk in chunks.items()
+            },
+        }
+        import json
+
+        output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    elif format == "markdown":
+        output.write_text(render_dossier(dossier, investigation, chunks), encoding="utf-8")
+    else:
+        raise ValueError(f"unsupported dossier format: {format}")
+    os.chmod(output, 0o600)
+    return output
+
+
+def render_answer(answer: GroundedAnswer, chunks: dict[str, EvidenceChunk]) -> str:
+    lines = [f"## {answer.question}", ""]
+    if answer.insufficient_evidence:
+        lines.extend([f"**Insufficient evidence:** {answer.explanation}", ""])
+    else:
+        for claim in answer.claims:
+            lines.extend([f"- {claim.text} {_citations(claim.chunk_ids, chunks)}", ""])
+    return "\n".join(lines)
+
+
+def render_dossier(
+    dossier: ResearchDossier,
+    investigation: Investigation,
+    chunks: dict[str, EvidenceChunk],
+) -> str:
+    papers = {item.paper.id: item.paper for item in investigation.papers}
+    lines = [
+        f"# {dossier.title}",
+        "",
+        f"**Evidence coverage:** {dossier.evidence_summary}",
+        "",
+        (
+            "This dossier is bounded by the approved search, staged corpus, retrieval time, and "
+            "available evidence. It does not establish exhaustive coverage or novelty."
+        ),
+        "",
+    ]
+    for section in dossier.sections:
+        lines.extend([f"## {section.title}", ""])
+        if not section.claims:
+            lines.extend(["No sufficiently grounded claim was produced for this section.", ""])
+        for claim in section.claims:
+            lines.extend([f"- {claim.text} {_citations(claim.chunk_ids, chunks)}", ""])
+    lines.extend(["## References", ""])
+    referenced = {chunks[chunk_id].paper_id for chunk_id in chunks}
+    for index, item in enumerate(investigation.papers, 1):
+        paper = papers[item.paper.id]
+        if paper.id in referenced:
+            lines.append(
+                f"{index}. {', '.join(paper.authors) or 'Unknown'}. "
+                f"**{paper.title}** ({paper.year or 'n.d.'}). {paper.url or ''}"
+            )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _citations(chunk_ids: list[str], chunks: dict[str, EvidenceChunk]) -> str:
+    rendered = []
+    for chunk_id in chunk_ids:
+        chunk = chunks.get(chunk_id)
+        if chunk is None:
+            rendered.append(f"[{chunk_id}: unavailable]")
+        else:
+            rendered.append(f"[{chunk.paper_id}, {chunk.locator}; `{chunk.id}`]")
+    return " ".join(rendered)

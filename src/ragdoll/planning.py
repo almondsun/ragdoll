@@ -29,9 +29,10 @@ class InterviewTurn(BaseModel):
 CLARIFIER_INSTRUCTIONS = """
 You scope scholarly literature searches. Ask only one pivotal question whose answer would
 materially change queries, filters, ranking, or output. Supply exactly three distinct, concise
-proposed answers;
-the terminal adds its own custom-answer option. Do not repeat answered dimensions. Mark complete
-when the request is sufficiently scoped. Never perform the research.
+proposed answers with short descriptive labels, never numbers as labels; the terminal adds its own
+custom-answer option. Ask about a new dimension such as purpose, scope, evidence, time range, or
+output, and never paraphrase an answered question. Mark complete when the request is sufficiently
+scoped. Never perform the research.
 """.strip()
 
 BRIEF_INSTRUCTIONS = """
@@ -43,7 +44,9 @@ dimensions instead of silently narrowing them.
 PLAN_INSTRUCTIONS = """
 Create a concise, executable scholarly discovery plan. Generate diverse query families mapped to
 investigation axes. Use OpenAlex and arXiv. Prefer primary scholarship, expose inclusion and
-exclusion criteria, and do not claim that any search is exhaustive.
+exclusion criteria, and do not claim that any search is exhaustive. Each query must be a short
+natural-language scholarly phrase (roughly two to eight terms), with no Boolean operators,
+parentheses, or source-specific field syntax; express separate concepts as separate query families.
 """.strip()
 
 
@@ -57,26 +60,38 @@ class Planner:
     ) -> ClarificationQuestion | None:
         if len(answers) >= self.max_questions:
             return None
-        prompt = json.dumps(
-            {
-                "original_request": original_prompt,
-                "answers": [answer.model_dump() for answer in answers],
-                "remaining_question_budget": self.max_questions - len(answers),
-            },
-            ensure_ascii=False,
-        )
-        turn = self.provider.structured(
-            instructions=CLARIFIER_INSTRUCTIONS,
-            prompt=prompt,
-            response_model=InterviewTurn,
-        )
-        if turn.complete:
-            return None
-        assert turn.question is not None
+        request: dict[str, object] = {
+            "original_request": original_prompt,
+            "answers": [answer.model_dump() for answer in answers],
+            "remaining_question_budget": self.max_questions - len(answers),
+        }
         previous_ids = {answer.question_id for answer in answers}
-        if turn.question.id in previous_ids:
-            raise ValueError(f"provider repeated clarification question {turn.question.id!r}")
-        return turn.question
+        previous_questions = {_normalized(answer.question) for answer in answers}
+        previous_options = [
+            {_normalized(label) for label in answer.option_labels} for answer in answers
+        ]
+        for _attempt in range(2):
+            turn = self.provider.structured(
+                instructions=CLARIFIER_INSTRUCTIONS,
+                prompt=json.dumps(request, ensure_ascii=False),
+                response_model=InterviewTurn,
+            )
+            if turn.complete:
+                return None
+            assert turn.question is not None
+            options = {_normalized(option.label) for option in turn.question.options}
+            repeated = (
+                turn.question.id in previous_ids
+                or _normalized(turn.question.question) in previous_questions
+                or any(len(options & prior) >= 2 for prior in previous_options)
+            )
+            if not repeated:
+                return turn.question
+            request["rejected_question"] = {
+                "reason": "This repeats an answered dimension; ask a materially different one.",
+                "question": turn.question.model_dump(),
+            }
+        return None
 
     def build_brief(
         self, original_prompt: str, answers: list[ClarificationAnswer]
@@ -120,3 +135,7 @@ class Planner:
             response_model=ResearchPlan,
             quality=True,
         )
+
+
+def _normalized(value: str) -> str:
+    return "".join(character for character in value.casefold() if character.isalnum())

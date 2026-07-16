@@ -13,7 +13,9 @@ nav:
   - Planning contract: planning-contract.md
   - Architecture: architecture.md
   - Retrieval and ranking: retrieval-and-ranking.md
+  - Evidence and dossiers: evidence-and-dossiers.md
   - Evaluation: evaluation.md
+  - v1 reference run: v1-reference-run.md
   - Privacy: privacy.md
 markdown_extensions:
   - admonition

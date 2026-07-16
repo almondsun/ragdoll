@@ -6,12 +6,19 @@ from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ClarificationOption(BaseModel):
     label: str = Field(min_length=1, max_length=60)
     description: str = Field(min_length=1, max_length=180)
+
+    @field_validator("label")
+    @classmethod
+    def label_is_descriptive(cls, value: str) -> str:
+        if not any(character.isalpha() for character in value):
+            raise ValueError("clarification option labels must be descriptive")
+        return value
 
 
 class ClarificationQuestion(BaseModel):
@@ -31,6 +38,7 @@ class ClarificationAnswer(BaseModel):
     question_id: str
     question: str
     answer: str = Field(min_length=1)
+    option_labels: list[str] = Field(default_factory=list, max_length=3)
 
 
 class ResearchBrief(BaseModel):
@@ -63,6 +71,13 @@ class ResearchPlan(BaseModel):
     ranking_priorities: list[str] = Field(default_factory=list)
 
 
+class FullTextCandidate(BaseModel):
+    url: str = Field(pattern=r"^https://")
+    source: str = Field(min_length=1)
+    license: str | None = None
+    version: str | None = None
+
+
 class Paper(BaseModel):
     id: str
     title: str = Field(min_length=1)
@@ -79,6 +94,7 @@ class Paper(BaseModel):
     sources: set[str] = Field(default_factory=set)
     queries: set[str] = Field(default_factory=set)
     source_ranks: list[int] = Field(default_factory=list)
+    fulltext_candidates: list[FullTextCandidate] = Field(default_factory=list)
     retrieved_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -89,11 +105,18 @@ class RelevanceJudgment(BaseModel):
     axis_coverage: list[str] = Field(default_factory=list)
     evidence_availability: int = Field(ge=0, le=2)
     confidence: float = Field(ge=0, le=1)
-    rationale: str = Field(min_length=1, max_length=400)
+    rationale: str = Field(min_length=1, max_length=160)
 
 
 class RelevanceBatch(BaseModel):
     judgments: list[RelevanceJudgment]
+
+    @model_validator(mode="after")
+    def paper_ids_are_distinct(self) -> RelevanceBatch:
+        identifiers = [judgment.paper_id for judgment in self.judgments]
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("relevance judgments must have distinct paper IDs")
+        return self
 
 
 class RankedPaper(BaseModel):
@@ -115,6 +138,16 @@ class InvestigationStatus(StrEnum):
     COMPLETE = "complete"
 
 
+class DossierStatus(StrEnum):
+    NOT_STARTED = "not_started"
+    AWAITING_APPROVAL = "awaiting_approval"
+    ACQUIRING = "acquiring"
+    INDEXING = "indexing"
+    SYNTHESIZING = "synthesizing"
+    READY = "ready"
+    PARTIAL = "partial"
+
+
 class Investigation(BaseModel):
     id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
     created_at: datetime
@@ -125,6 +158,80 @@ class Investigation(BaseModel):
     brief: ResearchBrief | None = None
     plan: ResearchPlan | None = None
     papers: list[RankedPaper] = Field(default_factory=list)
+    dossier_status: DossierStatus = DossierStatus.NOT_STARTED
+
+
+class EvidenceLevel(StrEnum):
+    FULL_TEXT = "full_text"
+    ABSTRACT = "abstract"
+    METADATA = "metadata"
+
+
+class DocumentStatus(StrEnum):
+    AVAILABLE = "available"
+    FALLBACK = "fallback"
+    FAILED = "failed"
+
+
+class EvidenceDocument(BaseModel):
+    id: str
+    investigation_id: str
+    paper_id: str
+    source_url: str | None = None
+    source: str
+    license: str | None = None
+    evidence_level: EvidenceLevel
+    status: DocumentStatus
+    sha256: str | None = None
+    media_type: str | None = None
+    byte_count: int | None = Field(default=None, ge=0)
+    page_count: int | None = Field(default=None, ge=0)
+    acquired_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    relative_path: str | None = None
+    error: str | None = None
+
+
+class EvidenceChunk(BaseModel):
+    id: str
+    investigation_id: str
+    paper_id: str
+    document_id: str
+    locator: str
+    evidence_level: EvidenceLevel
+    text: str = Field(min_length=1)
+    sha256: str
+
+
+class GroundedClaim(BaseModel):
+    text: str = Field(min_length=1, max_length=800)
+    chunk_ids: list[str] = Field(min_length=1, max_length=6)
+
+
+class DossierSection(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    claims: list[GroundedClaim] = Field(default_factory=list)
+
+
+class ResearchDossier(BaseModel):
+    title: str = Field(min_length=1, max_length=180)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    evidence_summary: str = Field(min_length=1)
+    sections: list[DossierSection] = Field(min_length=1)
+
+
+class GroundedAnswer(BaseModel):
+    question: str = Field(min_length=1)
+    claims: list[GroundedClaim] = Field(default_factory=list)
+    insufficient_evidence: bool = False
+    explanation: str = Field(min_length=1, max_length=800)
+
+    @model_validator(mode="after")
+    def insufficiency_is_explicit(self) -> GroundedAnswer:
+        if self.insufficient_evidence and self.claims:
+            raise ValueError("an insufficient-evidence answer cannot contain factual claims")
+        if not self.insufficient_evidence and not self.claims:
+            raise ValueError("a grounded answer requires at least one cited claim")
+        return self
 
 
 PaperId = Annotated[str, Field(min_length=1)]

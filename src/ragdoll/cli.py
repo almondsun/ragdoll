@@ -7,13 +7,14 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
+import httpx
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from . import __version__
 from .config import load_settings
-from .export import export_investigation
+from .export import export_dossier, export_investigation
 from .interactive import InteractiveResearch
 from .providers import ProviderError, make_provider
 from .storage import Workspace
@@ -81,7 +82,7 @@ def resume_command(
 def investigations_command() -> None:
     """List saved investigations."""
     table = Table("ID", "Status", "Updated", "Topic")
-    for investigation in Workspace(_root()).list():
+    for investigation in Workspace(_root()).list_investigations():
         table.add_row(
             investigation.id,
             investigation.status,
@@ -108,12 +109,37 @@ def export_command(
     output: Annotated[Path | None, typer.Option()] = None,
 ) -> None:
     """Export a saved investigation."""
-    suffix = {"markdown": "md", "bibtex": "bib", "json": "json"}.get(format)
+    suffix = {
+        "markdown": "md",
+        "bibtex": "bib",
+        "json": "json",
+        "dossier": "dossier.md",
+        "dossier-json": "dossier.json",
+    }.get(format)
     if suffix is None:
-        raise typer.BadParameter("format must be markdown, bibtex, or json")
-    investigation = Workspace(_root()).load(investigation_id)
+        raise typer.BadParameter("format must be markdown, bibtex, json, dossier, or dossier-json")
+    workspace = Workspace(_root())
+    investigation = workspace.load(investigation_id)
     destination = output or (_root() / ".ragdoll" / "exports" / f"{investigation_id}.{suffix}")
-    export_investigation(investigation, destination, format)
+    if format.startswith("dossier"):
+        dossier = workspace.load_dossier(investigation_id)
+        if dossier is None:
+            raise typer.BadParameter("this investigation has no dossier")
+        chunk_ids = [
+            item
+            for section in dossier.sections
+            for claim in section.claims
+            for item in claim.chunk_ids
+        ]
+        export_dossier(
+            dossier,
+            investigation,
+            workspace.chunks(chunk_ids),
+            destination,
+            "json" if format == "dossier-json" else "markdown",
+        )
+    else:
+        export_investigation(investigation, destination, format)
     console.print(destination)
 
 
@@ -129,6 +155,18 @@ def doctor() -> None:
         )
     else:
         console.print(f"Ollama: {settings.ollama_url} ({settings.ollama_model})")
+        try:
+            response = httpx.get(f"{settings.ollama_url}/api/tags", timeout=3)
+            response.raise_for_status()
+            models = {
+                model.get("name", "").removesuffix(":latest")
+                for model in response.json().get("models", [])
+            }
+            expected = settings.ollama_model.removesuffix(":latest")
+            state = "available" if expected in models else "not pulled"
+            console.print(f"Ollama server: reachable; model: {state}")
+        except (httpx.HTTPError, ValueError):
+            console.print("Ollama server: unreachable")
 
 
 if __name__ == "__main__":

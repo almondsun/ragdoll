@@ -35,6 +35,8 @@ def test_question_requires_exactly_three_distinct_options() -> None:
             question="Which goal matters most?",
             options=(value.options[0], value.options[0], value.options[2]),
         )
+    with pytest.raises(ValidationError, match="descriptive"):
+        ClarificationOption(label="1", description="A numeric label is not useful")
 
 
 def test_investigation_ids_are_path_safe(investigation) -> None:
@@ -78,9 +80,45 @@ def test_planner_stops_and_rejects_repeated_questions() -> None:
         question="What is the research goal?",
         options=question().options,
     )
-    planner = Planner(FakeProvider([InterviewTurn(complete=False, question=repeated)]))
-    with pytest.raises(ValueError, match="repeated"):
-        planner.next_question("topic", [answer])
+    repeated_turn = InterviewTurn(complete=False, question=repeated)
+    planner = Planner(FakeProvider([repeated_turn, repeated_turn]))
+    assert planner.next_question("topic", [answer]) is None
+
+    paraphrased_id = repeated.model_copy(update={"id": "new_identifier"})
+    paraphrased_turn = InterviewTurn(complete=False, question=paraphrased_id)
+    planner = Planner(FakeProvider([paraphrased_turn, paraphrased_turn]))
+    answer = answer.model_copy(
+        update={"question_id": "old_identifier", "question": repeated.question}
+    )
+    assert planner.next_question("topic", [answer]) is None
+
+
+def test_planner_rejects_reused_option_dimension() -> None:
+    answer = ClarificationAnswer(
+        question_id="purpose",
+        question="What is the primary purpose?",
+        answer="Technical capabilities",
+        option_labels=["Technical capabilities", "Applications", "Ethics"],
+    )
+    duplicate = ClarificationQuestion(
+        id="priority",
+        question="Which aspect should be prioritized?",
+        options=(
+            ClarificationOption(label="Technical capabilities", description="Architecture"),
+            ClarificationOption(label="Applications", description="Deployment"),
+            ClarificationOption(label="Ethics", description="Social impact"),
+        ),
+    )
+    repaired = question().model_copy(update={"id": "evidence_type"})
+    planner = Planner(
+        FakeProvider(
+            [
+                InterviewTurn(complete=False, question=duplicate),
+                InterviewTurn(complete=False, question=repaired),
+            ]
+        )
+    )
+    assert planner.next_question("topic", [answer]) == repaired
 
 
 def test_fake_provider_exhaustion() -> None:

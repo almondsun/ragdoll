@@ -59,7 +59,7 @@ class OpenAIProvider:
 class OllamaProvider:
     def __init__(self, settings: Settings, client: httpx.Client | None = None) -> None:
         self.settings = settings
-        self.client = client or httpx.Client(timeout=120)
+        self.client = client or httpx.Client(timeout=settings.ollama_timeout_seconds)
 
     def structured(
         self, *, instructions: str, prompt: str, response_model: type[T], quality: bool = False
@@ -68,12 +68,13 @@ class OllamaProvider:
         payload: dict[str, Any] = {
             "model": self.settings.ollama_model,
             "stream": False,
+            "think": False,
             "format": response_model.model_json_schema(),
             "messages": [
                 {"role": "system", "content": instructions},
                 {"role": "user", "content": prompt},
             ],
-            "options": {"temperature": 0},
+            "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 768},
         }
         last_error: Exception | None = None
         for _ in range(2):

@@ -13,7 +13,7 @@ from xml.etree.ElementTree import Element
 import httpx
 from defusedxml import ElementTree as ET
 
-from .domain import Paper
+from .domain import FullTextCandidate, Paper
 
 DOI_PREFIX = "https://doi.org/"
 
@@ -55,6 +55,7 @@ class OpenAlexSource(ScholarlySource):
         location = item.get("primary_location") or {}
         source = location.get("source") or {}
         abstract = _decode_abstract(item.get("abstract_inverted_index"))
+        fulltext_candidates = _openalex_fulltext_candidates(item)
         return Paper(
             id=str(item["id"]),
             title=_clean(item.get("display_name") or "Untitled work"),
@@ -73,6 +74,7 @@ class OpenAlexSource(ScholarlySource):
             sources={self.name},
             queries={query},
             source_ranks=[rank],
+            fulltext_candidates=fulltext_candidates,
         )
 
 
@@ -115,6 +117,13 @@ class ArxivSource(ScholarlySource):
                     sources={self.name},
                     queries={query},
                     source_ranks=[rank],
+                    fulltext_candidates=[
+                        FullTextCandidate(
+                            url=f"https://arxiv.org/pdf/{identifier}",
+                            source="arxiv",
+                            version="submitted manuscript",
+                        )
+                    ],
                 )
             )
         return papers
@@ -124,7 +133,7 @@ class CrossrefSource:
     name = "crossref"
 
     def __init__(self, client: httpx.Client | None = None, mailto: str | None = None) -> None:
-        headers = {"User-Agent": f"RAGdoll/0.1 ({mailto or 'no-contact'})"}
+        headers = {"User-Agent": f"RAGdoll/1.0 ({mailto or 'no-contact'})"}
         self.client = client or httpx.Client(timeout=30, headers=headers)
 
     def enrich(self, paper: Paper) -> Paper:
@@ -194,3 +203,26 @@ def _clean(value: str) -> str:
 
 def _optional_clean(value: object) -> str | None:
     return _clean(value) if isinstance(value, str) and value else None
+
+
+def _openalex_fulltext_candidates(item: dict[str, Any]) -> list[FullTextCandidate]:
+    locations = [item.get("best_oa_location"), item.get("primary_location")]
+    locations.extend(item.get("locations") or [])
+    candidates: list[FullTextCandidate] = []
+    seen: set[str] = set()
+    for location in locations:
+        if not isinstance(location, dict):
+            continue
+        url = location.get("pdf_url")
+        if not isinstance(url, str) or not url.startswith("https://") or url in seen:
+            continue
+        seen.add(url)
+        candidates.append(
+            FullTextCandidate(
+                url=url,
+                source="openalex",
+                license=_optional_clean(location.get("license")),
+                version=_optional_clean(location.get("version")),
+            )
+        )
+    return candidates

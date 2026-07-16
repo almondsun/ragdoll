@@ -15,23 +15,32 @@ from ragdoll.config import Settings
 from ragdoll.domain import (
     ClarificationOption,
     ClarificationQuestion,
+    DocumentStatus,
+    DossierStatus,
+    EvidenceChunk,
+    EvidenceDocument,
+    EvidenceLevel,
+    GroundedAnswer,
+    GroundedClaim,
     InvestigationStatus,
     RelevanceBatch,
     RelevanceJudgment,
+    ResearchDossier,
 )
 from ragdoll.interactive import InteractiveResearch
 from ragdoll.mascot import Mascot
 from ragdoll.planning import InterviewTurn
-from ragdoll.providers import FakeProvider
+from ragdoll.providers import FakeProvider, ProviderError
 from ragdoll.storage import Workspace
 
 
 class ScriptedSession:
     def __init__(self, responses: list[str]) -> None:
         self.responses = iter(responses)
+        self.messages: list[str] = []
 
     def prompt(self, message: str) -> str:
-        del message
+        self.messages.append(message)
         return next(self.responses)
 
 
@@ -174,6 +183,168 @@ def test_resume_and_helpers(tmp_path, investigation, brief, plan, papers, monkey
     reviewing = investigation.model_copy(update={"status": InvestigationStatus.PLAN_REVIEW})
     assert research.resume(reviewing) == reviewing
 
+    searching = investigation.model_copy(update={"status": InvestigationStatus.SEARCHING})
+    monkeypatch.setattr(research.service, "execute", lambda value: (investigation, []))
+    monkeypatch.setattr(research, "_review_collection", lambda value: value)
+    assert research.resume(searching) == investigation
+
+
+def test_dossier_requires_explicit_download_approval(tmp_path, investigation, papers) -> None:
+    research = make_research(tmp_path, FakeProvider([]), ["n"], papers)
+    research.service.workspace.save(investigation)
+    updated = research._dossier(investigation)
+    assert updated.dossier_status == DossierStatus.AWAITING_APPROVAL
+    assert research.service.workspace.list_documents(investigation.id) == []
+
+
+def test_collection_evidence_dossier_and_purge_commands(
+    tmp_path, investigation, papers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    research = make_research(
+        tmp_path,
+        FakeProvider([]),
+        [
+            "",
+            "/stage 99",
+            "/ask What improves coherence?",
+            "/evidence chunk-1",
+            "/evidence missing",
+            "/sources",
+            "/dossier",
+            "/dossier refresh Missing",
+            "/purge-evidence",
+            "n",
+            "/purge-evidence",
+            "yes",
+            "/quit",
+        ],
+        papers,
+    )
+    workspace = research.service.workspace
+    workspace.save(investigation)
+    document = EvidenceDocument(
+        id="doc-1",
+        investigation_id=investigation.id,
+        paper_id=investigation.papers[0].paper.id,
+        source="fixture",
+        evidence_level=EvidenceLevel.ABSTRACT,
+        status=DocumentStatus.FALLBACK,
+    )
+    chunk = EvidenceChunk(
+        id="chunk-1",
+        investigation_id=investigation.id,
+        paper_id=document.paper_id,
+        document_id=document.id,
+        locator="abstract",
+        evidence_level=EvidenceLevel.ABSTRACT,
+        text="Video diffusion improves coherence.",
+        sha256="a" * 64,
+    )
+    workspace.save_document(document, [chunk])
+    dossier = ResearchDossier(
+        title="Dossier",
+        evidence_summary="1 abstract",
+        sections=[
+            {
+                "title": "Executive summary",
+                "claims": [{"text": "Coherence improves.", "chunk_ids": [chunk.id]}],
+            }
+        ],
+    )
+    workspace.save_dossier(investigation.id, dossier)
+    answer = GroundedAnswer(
+        question="What improves coherence?",
+        claims=[GroundedClaim(text="Diffusion improves coherence.", chunk_ids=[chunk.id])],
+        explanation="Cited evidence.",
+    )
+    monkeypatch.setattr(research.service, "ask", lambda value, question: answer)
+
+    def purge_failure(value):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(research.service, "purge_evidence", purge_failure)
+
+    result = research._review_collection(investigation)
+
+    assert result == investigation
+    output = cast(io.StringIO, research.console.file).getvalue()
+    assert "Diffusion improves coherence" in output
+    assert "Evidence citation not found" in output
+    assert "Dossier section not found" in output
+    assert "Evidence purge failed" in output
+
+
+def test_dossier_approval_refresh_resume_and_build_paths(
+    tmp_path, investigation, papers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    research = make_research(tmp_path, FakeProvider([]), ["y"], papers)
+    research.service.workspace.save(investigation)
+    monkeypatch.setattr(research, "_build_dossier", lambda value: value)
+    approved = research._dossier(investigation)
+    assert approved.dossier_status == DossierStatus.AWAITING_APPROVAL
+    assert "send selected passages to openai" in cast(Any, research.session).messages[-1]
+
+    unstaged = investigation.model_copy(
+        update={
+            "papers": [item.model_copy(update={"staged": False}) for item in investigation.papers]
+        }
+    )
+    assert research._dossier(unstaged) == unstaged
+
+    chunk = EvidenceChunk(
+        id="chunk-1",
+        investigation_id=investigation.id,
+        paper_id=investigation.papers[0].paper.id,
+        document_id="doc-1",
+        locator="abstract",
+        evidence_level=EvidenceLevel.ABSTRACT,
+        text="Evidence.",
+        sha256="a" * 64,
+    )
+    dossier = ResearchDossier(
+        title="Dossier",
+        evidence_summary="1 abstract",
+        sections=[
+            {
+                "title": "Executive summary",
+                "claims": [{"text": "Evidence.", "chunk_ids": [chunk.id]}],
+            },
+            {"title": "Open questions", "claims": []},
+        ],
+    )
+    research.service.workspace.save_dossier(investigation.id, dossier)
+    assert research._dossier(investigation, "refresh Open questions") == investigation
+    assert research._dossier(investigation, "refresh Open questions") == investigation
+
+    partial = investigation.model_copy(update={"dossier_status": DossierStatus.PARTIAL})
+    research.session = cast(Any, ScriptedSession(["y"]))
+    assert research._dossier(partial) == partial
+
+
+def test_build_dossier_success_and_failure(
+    tmp_path, investigation, papers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    research = make_research(tmp_path, FakeProvider([]), [], papers)
+    research.service.workspace.save(investigation)
+    dossier = ResearchDossier(
+        title="Dossier",
+        evidence_summary="No usable evidence was indexed.",
+        sections=[{"title": "Executive summary", "claims": []}],
+    )
+    updated = investigation.model_copy(update={"dossier_status": DossierStatus.PARTIAL})
+    monkeypatch.setattr(
+        research.service,
+        "build_dossier",
+        lambda value: (updated, dossier, ["abstract fallback"]),
+    )
+    assert research._build_dossier(investigation) == updated
+
+    def fail(value):
+        raise ProviderError("bad citations")
+
+    monkeypatch.setattr(research.service, "build_dossier", fail)
+    assert research._build_dossier(investigation) == investigation
+
 
 def test_mascot_static_and_animated(monkeypatch: pytest.MonkeyPatch) -> None:
     output = io.StringIO()
@@ -209,8 +380,54 @@ def test_cli_read_only_and_workspace_commands(
     result = runner.invoke(app, ["export", investigation.id, "--format", "json"])
     assert result.exit_code == 0
     assert (tmp_path / ".ragdoll" / "exports" / f"{investigation.id}.json").exists()
+    workspace = Workspace(tmp_path)
+    document = EvidenceDocument(
+        id="doc-cli",
+        investigation_id=investigation.id,
+        paper_id=investigation.papers[0].paper.id,
+        source="fixture",
+        evidence_level=EvidenceLevel.ABSTRACT,
+        status=DocumentStatus.FALLBACK,
+    )
+    chunk = EvidenceChunk(
+        id="chunk-cli",
+        investigation_id=investigation.id,
+        paper_id=document.paper_id,
+        document_id=document.id,
+        locator="abstract",
+        evidence_level=EvidenceLevel.ABSTRACT,
+        text="Evidence.",
+        sha256="a" * 64,
+    )
+    workspace.save_document(document, [chunk])
+    workspace.save_dossier(
+        investigation.id,
+        ResearchDossier(
+            title="Dossier",
+            evidence_summary="1 abstract",
+            sections=[
+                {
+                    "title": "Summary",
+                    "claims": [{"text": "Evidence.", "chunk_ids": [chunk.id]}],
+                }
+            ],
+        ),
+    )
+    assert runner.invoke(app, ["export", investigation.id, "--format", "dossier"]).exit_code == 0
+    assert (
+        runner.invoke(app, ["export", investigation.id, "--format", "dossier-json"]).exit_code == 0
+    )
     assert runner.invoke(app, ["doctor"]).exit_code == 0
     monkeypatch.setenv("RAGDOLL_PROVIDER", "ollama")
+
+    class TagsResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self):
+            return {"models": [{"name": "qwen3:4b"}]}
+
+    monkeypatch.setattr("ragdoll.cli.httpx.get", lambda *args, **kwargs: TagsResponse())
     assert "Ollama" in runner.invoke(app, ["doctor"]).stdout
     assert runner.invoke(app, ["export", investigation.id, "--format", "pdf"]).exit_code != 0
 

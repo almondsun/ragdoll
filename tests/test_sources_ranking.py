@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from ragdoll.domain import Paper, RelevanceBatch, RelevanceJudgment
+from ragdoll.domain import FullTextCandidate, Paper, RelevanceBatch, RelevanceJudgment
 from ragdoll.providers import FakeProvider
 from ragdoll.ranking import deduplicate, reciprocal_rank, rerank, stage_diverse
 from ragdoll.sources import (
@@ -88,11 +88,20 @@ def test_crossref_enriches_without_making_failure_fatal(papers: list[Paper]) -> 
 
 def test_deduplication_merges_provenance(papers: list[Paper]) -> None:
     duplicate = papers[0].model_copy(
-        update={"id": "other", "sources": {"arxiv"}, "queries": {"other"}, "source_ranks": [3]}
+        update={
+            "id": "other",
+            "sources": {"arxiv"},
+            "queries": {"other"},
+            "source_ranks": [3],
+            "fulltext_candidates": [
+                FullTextCandidate(url="https://arxiv.org/pdf/1234", source="arxiv")
+            ],
+        }
     )
     result = deduplicate([papers[0], duplicate])
     assert len(result) == 1
     assert result[0].sources == {"openalex", "arxiv"}
+    assert result[0].fulltext_candidates == duplicate.fulltext_candidates
     assert reciprocal_rank(result[0]) > reciprocal_rank(papers[0])
     assert normalize_title("A: Paper!") == "a paper"
 
@@ -148,3 +157,35 @@ def test_rerank_and_diverse_staging(brief, plan, papers: list[Paper]) -> None:
         "architecture",
         "reproducibility",
     }
+
+
+def test_rerank_batches_local_model_work(brief, plan, papers: list[Paper]) -> None:
+    candidates = [
+        papers[0].model_copy(update={"id": f"paper-{index}", "source_ranks": [index + 1]})
+        for index in range(7)
+    ]
+
+    def judgments(values: list[Paper]) -> RelevanceBatch:
+        return RelevanceBatch(
+            judgments=[
+                RelevanceJudgment(
+                    paper_id=paper.id,
+                    topical_relevance=3,
+                    criteria_fit=3,
+                    evidence_availability=2,
+                    confidence=0.8,
+                    rationale="Relevant to the approved scope.",
+                )
+                for paper in values
+            ]
+        )
+
+    provider = FakeProvider(
+        [
+            judgments(candidates[:3]),
+            judgments(candidates[3:6]),
+            judgments(candidates[6:]),
+        ]
+    )
+    assert len(rerank(candidates, brief, plan, provider)) == 7
+    assert not provider.responses

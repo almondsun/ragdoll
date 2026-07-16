@@ -16,15 +16,17 @@ from .config import Settings
 from .domain import (
     ClarificationAnswer,
     ClarificationQuestion,
+    DossierStatus,
     Investigation,
     InvestigationStatus,
     ResearchPlan,
 )
-from .export import export_investigation
+from .export import export_dossier, export_investigation, render_answer, render_dossier
 from .mascot import Mascot
 from .planning import Planner
-from .providers import ModelProvider
+from .providers import ModelProvider, ProviderError
 from .service import ResearchService
+from .synthesis import SECTION_SPECS
 
 
 class InteractiveResearch:
@@ -67,6 +69,11 @@ class InteractiveResearch:
             return self._interview(investigation)
         if investigation.status == InvestigationStatus.PLAN_REVIEW:
             return self._review_plan(investigation)
+        if investigation.status == InvestigationStatus.SEARCHING:
+            with self.mascot.activity("searching", "Resuming approved scholarly search…"):
+                investigation, warnings = self.service.execute(investigation)
+            for warning in warnings:
+                self.console.print(f"[yellow]Partial coverage: {warning}[/yellow]")
         return self._review_collection(investigation)
 
     def _interview(self, investigation: Investigation) -> Investigation:
@@ -118,6 +125,7 @@ class InteractiveResearch:
             question_id=question.id,
             question=question.question,
             answer=answer,
+            option_labels=[option.label for option in question.options],
         )
 
     def _review_plan(self, investigation: Investigation) -> Investigation:
@@ -182,6 +190,45 @@ class InteractiveResearch:
                     self.mascot.result("Paper not found; use its number or ID.", success=False)
             elif name == "export":
                 self._export_all(investigation)
+            elif name == "dossier":
+                investigation = self._dossier(investigation, argument)
+            elif name == "ask":
+                question = argument.strip() or self.session.prompt("Question: ").strip()
+                if question:
+                    try:
+                        with self.mascot.activity("planning", "Retrieving grounded evidence…"):
+                            answer = self.service.ask(investigation, question)
+                        chunk_ids = [item for claim in answer.claims for item in claim.chunk_ids]
+                        self.console.print(
+                            Markdown(
+                                render_answer(answer, self.service.workspace.chunks(chunk_ids))
+                            )
+                        )
+                    except (ValueError, ProviderError) as error:
+                        self.mascot.result(str(error), success=False)
+            elif name == "evidence":
+                chunk = self.service.workspace.chunks([argument.strip()]).get(argument.strip())
+                if chunk:
+                    self.console.print(
+                        Markdown(
+                            f"## {chunk.paper_id} — {chunk.locator}\n\n"
+                            f"**Evidence level:** {chunk.evidence_level}\n\n{chunk.text}"
+                        )
+                    )
+                else:
+                    self.mascot.result("Evidence citation not found.", success=False)
+            elif name == "sources":
+                self._print_sources(investigation)
+            elif name == "purge-evidence":
+                confirm = self.session.prompt(
+                    "Delete cached documents and dossier? [y/N]: "
+                ).strip()
+                if confirm.casefold() in {"y", "yes"}:
+                    try:
+                        investigation = self.service.purge_evidence(investigation)
+                        self.mascot.result("Local evidence cache and dossier deleted.")
+                    except OSError as error:
+                        self.mascot.result(f"Evidence purge failed: {error}", success=False)
             elif name == "plan" and investigation.plan:
                 self._print_plan(
                     investigation.plan, investigation.brief.objective if investigation.brief else ""
@@ -192,7 +239,9 @@ class InteractiveResearch:
                 )
             elif name == "help":
                 self.console.print(
-                    "/candidates /staged /inspect N /stage N /unstage N /plan /brief /export /quit"
+                    "/candidates /staged /inspect N /stage N /unstage N /plan /brief "
+                    "/dossier /ask QUESTION /evidence CHUNK /sources /export "
+                    "/purge-evidence /quit"
                 )
             else:
                 self.console.print("[yellow]Unknown command. Use /help.[/yellow]")
@@ -258,4 +307,119 @@ class InteractiveResearch:
         directory = self.root / ".ragdoll" / "exports" / investigation.id
         for format, suffix in (("markdown", "md"), ("bibtex", "bib"), ("json", "json")):
             export_investigation(investigation, directory / f"reading-list.{suffix}", format)
+        dossier = self.service.workspace.load_dossier(investigation.id)
+        if dossier:
+            chunk_ids = [
+                item
+                for section in dossier.sections
+                for claim in section.claims
+                for item in claim.chunk_ids
+            ]
+            chunks = self.service.workspace.chunks(chunk_ids)
+            export_dossier(dossier, investigation, chunks, directory / "dossier.md", "markdown")
+            export_dossier(dossier, investigation, chunks, directory / "dossier.json", "json")
         self.mascot.result(f"Exported Markdown, BibTeX, and JSON to {directory}")
+
+    def _dossier(self, investigation: Investigation, argument: str = "") -> Investigation:
+        existing = self.service.workspace.load_dossier(investigation.id)
+        if existing:
+            command, _, requested = argument.strip().partition(" ")
+            if command.casefold() == "refresh":
+                title = requested.strip() or "Open questions"
+                if not self.service.workspace.remove_dossier_section(investigation.id, title):
+                    canonical = next(
+                        (
+                            section_title
+                            for section_title, _purpose in SECTION_SPECS
+                            if section_title.casefold() == title.casefold()
+                        ),
+                        None,
+                    )
+                    existing_titles = {section.title.casefold() for section in existing.sections}
+                    if canonical is None or canonical.casefold() in existing_titles:
+                        self.mascot.result(f"Dossier section not found: {title}", success=False)
+                        return investigation
+                    title = canonical
+                self.console.print(f"[dim]Regenerating dossier section: {title}[/dim]")
+                return self._build_dossier(investigation)
+            if investigation.dossier_status == DossierStatus.PARTIAL and len(existing.sections) < 7:
+                resume = self.session.prompt("Dossier is incomplete; resume it? [y/N]: ").strip()
+                if resume.casefold() in {"y", "yes"}:
+                    return self._build_dossier(investigation)
+            chunk_ids = [
+                item
+                for section in existing.sections
+                for claim in section.claims
+                for item in claim.chunk_ids
+            ]
+            self.console.print(
+                Markdown(
+                    render_dossier(
+                        existing, investigation, self.service.workspace.chunks(chunk_ids)
+                    )
+                )
+            )
+            return investigation
+        staged = [item for item in investigation.papers if item.staged]
+        if not staged:
+            self.mascot.result("Stage at least one paper before building a dossier.", success=False)
+            return investigation
+        limit = self.settings.dossier_paper_limit
+        self.console.print(f"\n[bold]Dossier evidence preview[/bold] (first {limit} staged papers)")
+        for item in staged[:limit]:
+            level = (
+                "open full text"
+                if item.paper.fulltext_candidates
+                else ("abstract fallback" if item.paper.abstract else "metadata only")
+            )
+            self.console.print(f"  • {item.paper.title} [dim]({level})[/dim]")
+        investigation = self.service.mark_dossier_awaiting_approval(investigation)
+        if self.settings.provider == "ollama":
+            consent = "Download and parse open full text for local Ollama synthesis? [y/N]: "
+        else:
+            consent = (
+                "Download and parse open full text, then send selected passages to "
+                f"{self.settings.provider} for synthesis? [y/N]: "
+            )
+        confirmation = self.session.prompt(consent)
+        if confirmation.strip().casefold() not in {"y", "yes"}:
+            self.console.print(
+                "[dim]Dossier acquisition cancelled; no documents were downloaded.[/dim]"
+            )
+            return investigation
+        return self._build_dossier(investigation)
+
+    def _build_dossier(self, investigation: Investigation) -> Investigation:
+        try:
+            with self.mascot.activity("staging", "Acquiring, indexing, and synthesizing evidence…"):
+                investigation, dossier, warnings = self.service.build_dossier(investigation)
+            for warning in warnings:
+                self.console.print(f"[yellow]Evidence fallback: {warning}[/yellow]")
+            chunk_ids = [
+                item
+                for section in dossier.sections
+                for claim in section.claims
+                for item in claim.chunk_ids
+            ]
+            self.console.print(
+                Markdown(
+                    render_dossier(dossier, investigation, self.service.workspace.chunks(chunk_ids))
+                )
+            )
+            return investigation
+        except (ValueError, ProviderError) as error:
+            self.mascot.result(f"Dossier failed: {error}", success=False)
+            return self.service.workspace.load(investigation.id)
+
+    def _print_sources(self, investigation: Investigation) -> None:
+        documents = self.service.workspace.list_documents(investigation.id)
+        table = Table("Paper ID", "Evidence", "Status", "Pages", "Source")
+        for document in documents:
+            table.add_row(
+                document.paper_id,
+                document.evidence_level,
+                document.status,
+                str(document.page_count or "—"),
+                document.source,
+            )
+        self.console.print(table)

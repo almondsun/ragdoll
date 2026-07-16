@@ -37,6 +37,9 @@ def test_ollama_structured_and_retry(brief) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
+        payload = request.read().decode()
+        assert '"think":false' in payload
+        assert '"num_ctx":8192' in payload
         if calls == 1:
             return httpx.Response(200, json={"message": {"content": "invalid"}})
         return httpx.Response(200, json={"message": {"content": brief.model_dump_json()}})
