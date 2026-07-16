@@ -87,17 +87,34 @@ class OllamaProvider:
                 response = self.client.post(f"{self.settings.ollama_url}/api/chat", json=payload)
                 response.raise_for_status()
                 content = response.json()["message"]["content"]
-                return response_model.model_validate_json(content)
-            except (httpx.HTTPError, KeyError, json.JSONDecodeError, ValueError) as error:
+            except (httpx.HTTPError, KeyError, json.JSONDecodeError) as error:
                 last_error = error
                 payload["messages"].append(
                     {
                         "role": "user",
                         "content": (
-                            "Return only valid JSON matching the supplied schema. "
-                            "Repair the prior output."
+                            "The request failed before valid JSON was received. "
+                            "Return only JSON matching the supplied schema."
                         ),
                     }
+                )
+                continue
+            try:
+                return response_model.model_validate_json(content)
+            except ValueError as error:
+                last_error = error
+                payload["messages"].extend(
+                    [
+                        {"role": "assistant", "content": content},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Your previous JSON failed schema validation:\n"
+                                f"{str(error)[:2000]}\n"
+                                "Return corrected JSON only, using exactly the supplied schema."
+                            ),
+                        },
+                    ]
                 )
         raise ProviderError(f"Ollama returned invalid structured output: {last_error}")
 
