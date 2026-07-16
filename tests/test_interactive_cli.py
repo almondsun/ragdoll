@@ -137,9 +137,9 @@ async def test_complete_fullscreen_flow(tmp_path, brief, plan, papers) -> None:
             lambda: (
                 application.investigation is not None
                 and application.investigation.status == InvestigationStatus.REVIEW
+                and application.query_one("#composer", TextArea).has_focus
             ),
         )
-        assert application.query_one("#composer", TextArea).has_focus
         assert application.investigation is not None
         assert len(application.investigation.answers) == 1
         assert len(application.investigation.papers) == len(papers)
