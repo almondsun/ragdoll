@@ -138,3 +138,9 @@ def test_research_contract_rejects_reversed_dates_and_unknown_sources(brief, pla
         ResearchPlan.model_validate(plan.model_dump() | {"sources": ["semantic-scholar"]})
     with pytest.raises(ValidationError, match="unsupported metadata"):
         ResearchPlan.model_validate(plan.model_dump() | {"metadata_sources": ["google"]})
+
+
+def test_research_plan_schema_exposes_closed_source_vocabularies() -> None:
+    properties = ResearchPlan.model_json_schema()["properties"]
+    assert properties["sources"]["items"]["enum"] == ["openalex", "arxiv"]
+    assert properties["metadata_sources"]["items"]["const"] == "crossref"
