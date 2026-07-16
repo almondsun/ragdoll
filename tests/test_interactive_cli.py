@@ -34,9 +34,9 @@ from ragdoll.domain import (
 from ragdoll.editor import ExternalEditorError, edit_text
 from ragdoll.interactive import InteractiveResearch
 from ragdoll.mascot import (
-    FRAME_COUNT,
     SPRITE_FRAMES,
     activity_renderable,
+    frame_count,
     mascot_renderable,
     pixel_heights,
     pixel_widths,
@@ -400,19 +400,25 @@ async def test_composer_help_completion_interrupt_and_card_detail(tmp_path, pape
         await pilot.resize_terminal(70, 20)
         await pilot.pause()
         assert application.query_one("#resize-warning", Static).display
-        await pilot.resize_terminal(100, 30)
+        await pilot.resize_terminal(80, 24)
         await pilot.pause()
         assert not application.query_one("#resize-warning", Static).display
+        activity = application.query_one("#activity", Static)
+        composer = application.query_one("#composer", TextArea)
+        footer = application.query_one("#footer", Static)
+        assert activity.size.height == 2
+        assert composer.region.bottom <= footer.region.y
 
 
 @pytest.mark.asyncio
-async def test_reduced_motion_cameo_is_transient_and_not_in_timeline(tmp_path, papers) -> None:
+async def test_reduced_motion_rail_is_persistent_and_not_in_timeline(tmp_path, papers) -> None:
     application = make_app(tmp_path, FakeProvider([]), papers)
     async with application.run_test(size=(100, 30)) as pilot:
         await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
         cards_before = len(application.query(TimelineCard))
         async with application.activity("searching", "Searching scholarly sources…"):
-            await pilot.pause()
+            await pilot.pause(0.5)
+            assert application._mascot_frame == 0
             console = Console(width=80, color_system=None)
             visual = cast(Any, application.query_one("#activity", Static).render())
             with console.capture() as capture:
@@ -420,29 +426,42 @@ async def test_reduced_motion_cameo_is_transient_and_not_in_timeline(tmp_path, p
             rendered = capture.get()
             assert "Searching scholarly sources" in rendered
             assert "● working" in rendered
-        await pilot.pause()
+        assert application._mascot_state == "success"
+        await pilot.pause(1.0)
         visual = cast(Any, application.query_one("#activity", Static).render())
-        assert str(visual) == ""
+        with console.capture() as capture:
+            console.print(visual._renderable)
+        assert "Ready" in capture.get()
+        assert application._mascot_state == "idle"
         assert len(application.query(TimelineCard)) == cards_before
 
 
 @pytest.mark.asyncio
-async def test_animated_cameo_runs_three_frames_once(tmp_path, papers, monkeypatch) -> None:
+async def test_animated_mascot_loops_until_unmount(tmp_path, papers, monkeypatch) -> None:
     application = RagdollApp(tmp_path, Settings(animate=True), FakeProvider([]))
     application.service.openalex = cast(Any, StaticSource(papers))
-    observed: list[int] = []
+    observed: list[tuple[str, int]] = []
 
     def capture_cameo(phase, frame, message, *, color=True):
-        observed.append(frame)
+        observed.append((phase, frame))
         return f"{phase}:{frame}:{message}:{color}"
 
     monkeypatch.setattr("ragdoll.tui.activity_renderable", capture_cameo)
     async with application.run_test(size=(100, 30)) as pilot:
         await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
-        await application._play_activity_cameo("planning", "Planning…")
-        assert observed == [0, 1, 2]
-        await pilot.pause(0.3)
-        assert observed == [0, 1, 2]
+        await pilot.pause(0.8)
+        idle_frames = [frame for phase, frame in observed if phase == "idle"]
+        assert {0, 1, 2} <= set(idle_frames)
+
+        observed.clear()
+        async with application.activity("planning", "Planning…"):
+            await pilot.pause(0.8)
+        planning_frames = [frame for phase, frame in observed if phase == "planning"]
+        assert max(planning_frames) >= 4
+        assert application._mascot_state == "success"
+        await pilot.pause(1.0)
+        assert application._mascot_state == "idle"
+    assert application._mascot_timer is None
 
 
 @pytest.mark.asyncio
@@ -450,35 +469,27 @@ async def test_activity_shows_result_phases_and_cleans_up_after_animation_failur
     tmp_path, papers, monkeypatch
 ) -> None:
     application = make_app(tmp_path, FakeProvider([]), papers)
-    observed: list[str] = []
-
-    async def capture_phase(phase, message):
-        observed.append(phase)
-
-    monkeypatch.setattr(application, "_play_activity_cameo", capture_phase)
     async with application.run_test(size=(100, 30)) as pilot:
         await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
         async with application.activity("planning", "Planning…"):
             pass
-        assert observed == ["planning", "success"]
+        assert application._mascot_state == "success"
+        await pilot.pause(1.0)
+        assert application._mascot_state == "idle"
 
-        observed.clear()
         with pytest.raises(ValueError, match="provider failed"):
             async with application.activity("searching", "Searching…"):
                 raise ValueError("provider failed")
-        assert observed == ["searching", "error"]
+        assert application._mascot_state == "error"
 
-        observed.clear()
-
-        async def fail_animation(phase, message):
-            observed.append(phase)
+        def fail_animation(*args, **kwargs):
             raise RuntimeError("animation failed")
 
-        monkeypatch.setattr(application, "_play_activity_cameo", fail_animation)
+        monkeypatch.setattr("ragdoll.tui.activity_renderable", fail_animation)
         async with application.activity("staging", "Staging…"):
             pass
         await pilot.pause()
-        assert observed == ["staging", "success"]
+        assert application._mascot_state == "success"
         assert not application._busy
         assert application.query_one("#composer", TextArea).has_focus
 
@@ -661,21 +672,23 @@ def test_commands_mascot_rendering_and_markdown_helpers(investigation) -> None:
     assert {"plan", "papers", "dossier", "ask", "quit"} <= COMMAND_NAMES
     assert "/papers" in command_help()
     assert "Keyboard" in help_markdown()
-    assert pixel_widths() == {11}
-    assert pixel_heights() == {6}
+    assert pixel_widths() == {3}
+    assert pixel_heights() == {2}
     assert {
         cell_len(row) for frames in SPRITE_FRAMES.values() for frame in frames for row in frame
-    } == {11}
-    assert FRAME_COUNT == 3
+    } == {3}
+    assert frame_count("idle") == 8
+    assert {frame_count(phase) for phase in SPRITE_FRAMES if phase != "idle"} == {4}
     assert set(SPRITE_FRAMES) == {
         "welcome",
+        "idle",
         "planning",
         "searching",
         "staging",
         "success",
         "error",
     }
-    assert sprite_rows("welcome", 99) == SPRITE_FRAMES["welcome"][-1]
+    assert sprite_rows("idle", frame_count("idle")) == SPRITE_FRAMES["idle"][0]
     assert all(
         "\N{BOX DRAWINGS LIGHT DIAGONAL CROSS}" not in row and "X" not in row
         for frames in SPRITE_FRAMES.values()
@@ -759,7 +772,7 @@ def test_cli_version_and_noninteractive_error(monkeypatch) -> None:
     runner = CliRunner()
     version = runner.invoke(cli_app, ["--version"])
     assert version.exit_code == 0
-    assert "ragdoll 2.0.1" in version.output
+    assert "ragdoll 2.1.0" in version.output
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("sys.stdout.isatty", lambda: False)
     result = runner.invoke(cli_app, ["--topic", "video"])

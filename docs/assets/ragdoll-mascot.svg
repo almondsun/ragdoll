@@ -1,49 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">RAGdoll block-pixel research cat</title>
-  <desc id="desc">A friendly seated cyan cat with a violet fabric ear and coral collar tag.</desc>
+  <title id="title">RAGdoll M2 research cat</title>
+  <desc id="desc">A minimal two-row cat face with violet and cyan ears, cream eyes, and a coral smile.</desc>
   <rect width="512" height="512" rx="96" fill="#0f141b"/>
-  <g aria-label="Seated block-pixel cat" shape-rendering="crispEdges">
-    <rect x="103" y="171" width="34" height="17" fill="#9b5de5"/>
-    <rect x="137" y="154" width="34" height="34" fill="#9b5de5"/>
-    <rect x="171" y="171" width="34" height="17" fill="#9b5de5"/>
-    <rect x="307" y="171" width="34" height="17" fill="#56cfe1"/>
-    <rect x="341" y="154" width="34" height="34" fill="#56cfe1"/>
-    <rect x="375" y="171" width="34" height="17" fill="#56cfe1"/>
-    <rect x="69" y="188" width="34" height="34" fill="#56cfe1"/>
-    <rect x="103" y="188" width="34" height="34" fill="#56cfe1"/>
-    <rect x="137" y="188" width="34" height="34" fill="#56cfe1"/>
-    <rect x="171" y="188" width="34" height="34" fill="#56cfe1"/>
-    <rect x="205" y="188" width="34" height="34" fill="#56cfe1"/>
-    <rect x="239" y="188" width="34" height="34" fill="#56cfe1"/>
-    <rect x="273" y="188" width="34" height="34" fill="#56cfe1"/>
-    <rect x="307" y="188" width="34" height="34" fill="#56cfe1"/>
-    <rect x="341" y="188" width="34" height="34" fill="#56cfe1"/>
-    <rect x="375" y="188" width="34" height="34" fill="#56cfe1"/>
-    <rect x="409" y="188" width="34" height="34" fill="#56cfe1"/>
-    <rect x="69" y="222" width="34" height="34" fill="#56cfe1"/>
-    <rect x="103" y="222" width="34" height="34" fill="#56cfe1"/>
-    <circle cx="188" cy="239" r="7.82" fill="#fff3c4"/>
-    <circle cx="324" cy="239" r="7.82" fill="#fff3c4"/>
-    <rect x="375" y="222" width="34" height="34" fill="#56cfe1"/>
-    <rect x="409" y="222" width="34" height="34" fill="#56cfe1"/>
-    <rect x="103" y="256" width="34" height="34" fill="#56cfe1"/>
-    <rect x="137" y="256" width="34" height="34" fill="#56cfe1"/>
-    <rect x="171" y="256" width="34" height="34" fill="#56cfe1"/>
-    <path d="M256 264.16 L264.84 279.8 H247.16Z" fill="#ff6b6b"/>
-    <rect x="307" y="256" width="34" height="34" fill="#56cfe1"/>
-    <rect x="341" y="256" width="34" height="34" fill="#56cfe1"/>
-    <rect x="375" y="256" width="34" height="34" fill="#56cfe1"/>
-    <rect x="171" y="290" width="34" height="34" fill="#56cfe1"/>
-    <rect x="205" y="290" width="34" height="34" fill="#56cfe1"/>
-    <rect x="239" y="290" width="34" height="34" fill="#56cfe1"/>
-    <rect x="273" y="290" width="34" height="34" fill="#56cfe1"/>
-    <rect x="307" y="290" width="34" height="34" fill="#56cfe1"/>
-    <rect x="341" y="307" width="34" height="17" fill="#56cfe1"/>
-    <rect x="137" y="324" width="34" height="34" fill="#56cfe1"/>
-    <rect x="171" y="324" width="34" height="34" fill="#56cfe1"/>
-    <circle cx="256" cy="341" r="7.82" fill="#ff6b6b"/>
-    <rect x="307" y="324" width="34" height="34" fill="#56cfe1"/>
-    <rect x="341" y="324" width="34" height="34" fill="#56cfe1"/>
-    <rect x="409" y="324" width="34" height="34" fill="#56cfe1"/>
-    </g>
+  <g aria-label="Minimal M2 research cat" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M106 286 L181 136 L256 286Z" fill="#9b5de5"/>
+    <path d="M256 286 L331 136 L406 286Z" fill="#56cfe1"/>
+    <circle cx="158.5" cy="368.5" r="24" fill="#fff3c4"/>
+    <circle cx="353.5" cy="368.5" r="24" fill="#fff3c4"/>
+    <path d="M214 379 Q256 442 298 379" fill="none" stroke="#ff6b6b" stroke-width="18"/>
+  </g>
 </svg>

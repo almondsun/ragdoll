@@ -1,52 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
   <title id="title">RAGdoll</title>
-  <desc id="desc">A block-pixel research cat beside RAGdoll's explainable scholarly research wordmark.</desc>
+  <desc id="desc">The minimal M2 research cat beside RAGdoll's explainable scholarly research wordmark.</desc>
   <rect width="1280" height="640" fill="#0f141b"/>
   <rect x="64" y="96" width="496" height="448" rx="72" fill="#172a3a" stroke="#9b5de5" stroke-width="4"/>
-  <g aria-label="Seated block-pixel cat" shape-rendering="crispEdges">
-    <rect x="132" y="216" width="40" height="20" fill="#9b5de5"/>
-    <rect x="172" y="196" width="40" height="40" fill="#9b5de5"/>
-    <rect x="212" y="216" width="40" height="20" fill="#9b5de5"/>
-    <rect x="372" y="216" width="40" height="20" fill="#56cfe1"/>
-    <rect x="412" y="196" width="40" height="40" fill="#56cfe1"/>
-    <rect x="452" y="216" width="40" height="20" fill="#56cfe1"/>
-    <rect x="92" y="236" width="40" height="40" fill="#56cfe1"/>
-    <rect x="132" y="236" width="40" height="40" fill="#56cfe1"/>
-    <rect x="172" y="236" width="40" height="40" fill="#56cfe1"/>
-    <rect x="212" y="236" width="40" height="40" fill="#56cfe1"/>
-    <rect x="252" y="236" width="40" height="40" fill="#56cfe1"/>
-    <rect x="292" y="236" width="40" height="40" fill="#56cfe1"/>
-    <rect x="332" y="236" width="40" height="40" fill="#56cfe1"/>
-    <rect x="372" y="236" width="40" height="40" fill="#56cfe1"/>
-    <rect x="412" y="236" width="40" height="40" fill="#56cfe1"/>
-    <rect x="452" y="236" width="40" height="40" fill="#56cfe1"/>
-    <rect x="492" y="236" width="40" height="40" fill="#56cfe1"/>
-    <rect x="92" y="276" width="40" height="40" fill="#56cfe1"/>
-    <rect x="132" y="276" width="40" height="40" fill="#56cfe1"/>
-    <circle cx="232" cy="296" r="9.2" fill="#fff3c4"/>
-    <circle cx="392" cy="296" r="9.2" fill="#fff3c4"/>
-    <rect x="452" y="276" width="40" height="40" fill="#56cfe1"/>
-    <rect x="492" y="276" width="40" height="40" fill="#56cfe1"/>
-    <rect x="132" y="316" width="40" height="40" fill="#56cfe1"/>
-    <rect x="172" y="316" width="40" height="40" fill="#56cfe1"/>
-    <rect x="212" y="316" width="40" height="40" fill="#56cfe1"/>
-    <path d="M312 325.6 L322.4 344 H301.6Z" fill="#ff6b6b"/>
-    <rect x="372" y="316" width="40" height="40" fill="#56cfe1"/>
-    <rect x="412" y="316" width="40" height="40" fill="#56cfe1"/>
-    <rect x="452" y="316" width="40" height="40" fill="#56cfe1"/>
-    <rect x="212" y="356" width="40" height="40" fill="#56cfe1"/>
-    <rect x="252" y="356" width="40" height="40" fill="#56cfe1"/>
-    <rect x="292" y="356" width="40" height="40" fill="#56cfe1"/>
-    <rect x="332" y="356" width="40" height="40" fill="#56cfe1"/>
-    <rect x="372" y="356" width="40" height="40" fill="#56cfe1"/>
-    <rect x="412" y="376" width="40" height="20" fill="#56cfe1"/>
-    <rect x="172" y="396" width="40" height="40" fill="#56cfe1"/>
-    <rect x="212" y="396" width="40" height="40" fill="#56cfe1"/>
-    <circle cx="312" cy="416" r="9.2" fill="#ff6b6b"/>
-    <rect x="372" y="396" width="40" height="40" fill="#56cfe1"/>
-    <rect x="412" y="396" width="40" height="40" fill="#56cfe1"/>
-    <rect x="492" y="396" width="40" height="40" fill="#56cfe1"/>
-    </g>
+  <g aria-label="Minimal M2 research cat" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M154 336 L233 178 L312 336Z" fill="#9b5de5"/>
+    <path d="M312 336 L391 178 L470 336Z" fill="#56cfe1"/>
+    <circle cx="209.3" cy="422.9" r="25.28" fill="#fff3c4"/>
+    <circle cx="414.7" cy="422.9" r="25.28" fill="#fff3c4"/>
+    <path d="M267.76 433.96 Q312 500.32 356.24 433.96" fill="none" stroke="#ff6b6b" stroke-width="18.96"/>
+  </g>
   <text x="620" y="274" fill="#fff3c4" font-size="108" font-family="ui-monospace, monospace" font-weight="700">RAGdoll</text>
   <text x="625" y="350" fill="#56cfe1" font-size="34" font-family="ui-sans-serif, sans-serif">Research, with receipts.</text>
   <text x="625" y="416" fill="#d9d5e3" font-size="26" font-family="ui-sans-serif, sans-serif">Explainable scholarly research from your terminal.</text>

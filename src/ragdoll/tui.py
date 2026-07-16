@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import ClassVar, cast
+from typing import ClassVar
 from uuid import uuid4
 
 from rich.console import Group
@@ -19,6 +19,7 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, VerticalScroll
 from textual.message import Message
 from textual.screen import ModalScreen
+from textual.timer import Timer
 from textual.widgets import (
     Button,
     Input,
@@ -44,13 +45,15 @@ from .domain import (
 )
 from .editor import ExternalEditorError, edit_text
 from .export import export_dossier, export_investigation, render_answer, render_dossier
-from .mascot import FRAME_COUNT, MascotPhase, activity_renderable, mascot_renderable
+from .mascot import MascotPhase, activity_renderable, mascot_renderable
 from .planning import Planner
 from .providers import ModelProvider, ProviderError
 from .service import ResearchService
 from .synthesis import SECTION_SPECS
 
 BindingSpec = Binding | tuple[str, str] | tuple[str, str, str]
+MASCOT_INTERVAL_SECONDS = 0.18
+RESULT_HOLD_TICKS = 5
 
 
 class Composer(TextArea):
@@ -384,7 +387,7 @@ class RagdollApp(App[Investigation | None]):
     .warning { border-left: thick $warning; }
     .error { border-left: thick $error; }
     .success { border-left: thick $success; }
-    #activity { height: auto; min-height: 1; max-height: 6; margin: 0 2; color: $text-muted; }
+    #activity { height: 2; margin: 0 2; color: $text-muted; }
     #command-menu {
         height: auto;
         max-height: 6;
@@ -458,8 +461,12 @@ class RagdollApp(App[Investigation | None]):
         self.initial_topic = topic
         self.investigation = investigation
         self._busy = False
-        self._activity_state = "planning"
-        self._activity_message = ""
+        self._mascot_state: MascotPhase = "idle"
+        self._mascot_message = "Ready"
+        self._mascot_frame = 0
+        self._mascot_ticks = 0
+        self._mascot_result_ticks = 0
+        self._mascot_timer: Timer | None = None
         self._empty_interrupts = 0
         self._command_pending = False
         self._workflow_pending = bool(topic or investigation is not None)
@@ -490,7 +497,16 @@ class RagdollApp(App[Investigation | None]):
         self.title = "RAGdoll"
         if self.initial_topic or self.investigation is not None:
             self.query_one(Composer).disabled = True
+        self._render_mascot()
+        self._mascot_timer = self.set_interval(
+            MASCOT_INTERVAL_SECONDS, self._tick_mascot, name="m2-mascot"
+        )
         self.run_worker(self._bootstrap(), group="workflow", exclusive=True)
+
+    def on_unmount(self) -> None:
+        if self._mascot_timer is not None:
+            self._mascot_timer.stop()
+            self._mascot_timer = None
 
     async def _bootstrap(self) -> None:
         try:
@@ -511,17 +527,13 @@ class RagdollApp(App[Investigation | None]):
     async def _show_splash(self) -> None:
         color = not bool(os.getenv("NO_COLOR"))
         card = Static(
-            mascot_renderable(frame=0 if self.settings.animate else FRAME_COUNT - 1, color=color),
+            mascot_renderable(color=color),
             id="splash",
             classes="timeline-card splash",
         )
         timeline = self.query_one("#timeline", VerticalScroll)
         await timeline.mount(card)
         timeline.scroll_end(animate=False)
-        if self.settings.animate:
-            for frame in range(1, FRAME_COUNT):
-                await asyncio.sleep(0.2)
-                card.update(mascot_renderable(frame=frame, color=color))
 
     async def add_card(self, title: str, summary: str, details: str = "", tone: str = "") -> None:
         timeline = self.query_one("#timeline", VerticalScroll)
@@ -531,11 +543,8 @@ class RagdollApp(App[Investigation | None]):
     @asynccontextmanager
     async def activity(self, state: str, message: str) -> AsyncIterator[None]:
         self._busy = True
-        self._activity_state = state
-        self._activity_message = message
         self.query_one(Composer).disabled = True
-        phase = self._mascot_phase(state)
-        animation = asyncio.create_task(self._play_activity_cameo(phase, message))
+        self._set_mascot(self._coerce_mascot_phase(state), message)
         operation_failed = False
         try:
             yield
@@ -544,18 +553,11 @@ class RagdollApp(App[Investigation | None]):
             raise
         finally:
             try:
-                with suppress(Exception):
-                    await animation
                 result_phase: MascotPhase = "error" if operation_failed else "success"
                 result_message = "Operation stopped" if operation_failed else "Phase complete"
-                with suppress(Exception):
-                    await self._play_activity_cameo(result_phase, result_message)
+                self._set_mascot(result_phase, result_message, hold_ticks=RESULT_HOLD_TICKS)
             finally:
                 self._busy = False
-                self._activity_message = ""
-                activity = self.query("#activity")
-                if activity:
-                    activity.first(Static).update("")
                 composers = self.query(Composer)
                 if composers:
                     composer = composers.first()
@@ -565,23 +567,48 @@ class RagdollApp(App[Investigation | None]):
                 self._update_status()
 
     @staticmethod
-    def _mascot_phase(state: str) -> MascotPhase:
-        phase = (
-            state
-            if state in {"planning", "searching", "staging", "success", "error"}
-            else "planning"
-        )
-        return cast(MascotPhase, phase)
+    def _coerce_mascot_phase(state: str) -> MascotPhase:
+        if state == "searching":
+            return "searching"
+        if state == "staging":
+            return "staging"
+        return "planning"
 
-    async def _play_activity_cameo(self, phase: MascotPhase, message: str) -> None:
-        color = not bool(os.getenv("NO_COLOR"))
-        frames = range(FRAME_COUNT) if self.settings.animate else (FRAME_COUNT - 1,)
-        for index, frame in enumerate(frames):
-            self.query_one("#activity", Static).update(
-                activity_renderable(phase, frame, message, color=color)
+    def _set_mascot(self, phase: MascotPhase, message: str, *, hold_ticks: int = 0) -> None:
+        self._mascot_state = phase
+        self._mascot_message = message
+        self._mascot_frame = 0
+        self._mascot_ticks = 0
+        self._mascot_result_ticks = hold_ticks
+        self._render_mascot()
+
+    def _tick_mascot(self) -> None:
+        if self._mascot_result_ticks:
+            self._mascot_result_ticks -= 1
+            if not self._mascot_result_ticks:
+                self._set_mascot("idle", "Ready")
+                return
+        if not self.settings.animate:
+            return
+        self._mascot_ticks += 1
+        if self._mascot_state == "idle" and self._mascot_ticks % 2:
+            return
+        self._mascot_frame += 1
+        self._render_mascot()
+
+    def _render_mascot(self) -> None:
+        activity = self.query("#activity")
+        if not activity:
+            return
+        with suppress(Exception):
+            activity.first(Static).update(
+                activity_renderable(
+                    self._mascot_state,
+                    self._mascot_frame,
+                    self._mascot_message,
+                    color=not bool(os.getenv("NO_COLOR")),
+                )
             )
-            if self.settings.animate and index < FRAME_COUNT - 1:
-                await asyncio.sleep(0.2)
 
     async def _start_flow(self, topic: str) -> None:
         topic = topic.strip()

@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/ragdoll-mascot.svg" alt="RAGdoll block-pixel research cat" width="160">
+  <img src="docs/assets/ragdoll-mascot.svg" alt="RAGdoll minimal M2 research cat" width="160">
   <h1>RAGdoll</h1>
   <p><strong>Turn a research question into an explainable, cited literature dossier—from your terminal.</strong></p>
   <p>Adaptive scoping, editable search plans, transparent ranking, local evidence, and auditable claims.</p>
@@ -18,7 +18,7 @@ explicit approval, it downloads available open PDFs, builds a local page-aware e
 produces a claim-level cited research dossier that can be questioned from the same terminal.
 
 <p align="center">
-  <img src="docs/assets/ragdoll-tui.svg" alt="RAGdoll 2.0 fullscreen terminal workspace" width="920">
+  <img src="docs/assets/ragdoll-tui.svg" alt="RAGdoll 2.1 fullscreen terminal workspace" width="920">
 </p>
 
 ## The interaction
@@ -107,8 +107,9 @@ Read the [architecture](docs/architecture.md), [planning contract](docs/planning
 
 ## Status
 
-`v2.0.1` preserves the completed research contract and presents its interactive surface as a
-fullscreen, conversation-first terminal workspace with a compact block-pixel cat companion.
+`v2.1.0` preserves the completed research contract and presents its interactive surface as a
+fullscreen, conversation-first terminal workspace with the continuously animated `3 x 2` M2 cat
+companion in a persistent activity rail.
 Existing v1 investigations, SQLite workspaces, provider settings, and export formats remain
 compatible; only the in-app slash vocabulary changed in v2.0.0.
 RAGdoll does not bypass paywalls, perform OCR, claim exhaustive coverage, prove novelty, or replace

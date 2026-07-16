@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.0 — 2026-07-15
+
+- Replaced the block-pixel cat with the portable `3 x 2` M2 companion and matching minimal public
+  identity, without adding a Nerd Font dependency.
+- Added a persistent two-row activity rail with continuous idle, planning, searching, and staging
+  loops plus brief success and error transitions.
+- Preserved static reduced-motion, monochrome output, operation error isolation, and the completed
+  research and workspace contracts.
+
 ## 2.0.1 — 2026-07-15
 
 - Restored RAGdoll's cat identity as a compact `11 x 6` block-pixel companion with a playful,

@@ -34,7 +34,7 @@ async def capture_application(root: Path) -> None:
     application.console._color_system = ColorSystem.TRUECOLOR
     async with application.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
-        welcome = normalized_svg(application.export_screenshot(title="RAGdoll 2.0.1 welcome"))
+        welcome = normalized_svg(application.export_screenshot(title="RAGdoll 2.1.0 welcome"))
         expected_colors = {"#56cfe1", "#9b5de5", "#ff6b6b", "#fff3c4"}
         captured_colors = set(re.findall(r"#[0-9a-f]{6}", welcome.casefold()))
         if not expected_colors <= captured_colors:
@@ -71,7 +71,7 @@ async def capture_application(root: Path) -> None:
         await pilot.pause()
         destination = root / "docs" / "assets" / "ragdoll-tui.svg"
         destination.write_text(
-            normalized_svg(application.export_screenshot(title="RAGdoll 2.0.1 terminal workspace")),
+            normalized_svg(application.export_screenshot(title="RAGdoll 2.1.0 terminal workspace")),
             encoding="utf-8",
         )
 
