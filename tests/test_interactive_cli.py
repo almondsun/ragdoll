@@ -800,7 +800,7 @@ def test_cli_version_and_noninteractive_error(monkeypatch) -> None:
     runner = CliRunner()
     version = runner.invoke(cli_app, ["--version"])
     assert version.exit_code == 0
-    assert "ragdoll 2.1.0" in version.output
+    assert "ragdoll 2.2.0" in version.output
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("sys.stdout.isatty", lambda: False)
     result = runner.invoke(cli_app, ["--topic", "video"])
