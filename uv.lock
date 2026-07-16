@@ -1351,7 +1351,7 @@ wheels = [
 
 [[package]]
 name = "ragdoll-research"
-version = "2.0.0"
+version = "2.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "defusedxml" },

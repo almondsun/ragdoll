@@ -1,4 +1,7 @@
-.PHONY: check format screenshot test
+.PHONY: brand check format screenshot test
+
+brand:
+	python scripts/render_brand.py
 
 check:
 	ruff format --check .

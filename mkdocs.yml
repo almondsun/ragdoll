@@ -6,8 +6,8 @@ theme:
   logo: assets/ragdoll-mascot.svg
   favicon: assets/ragdoll-mascot.png
   palette:
-    primary: blue grey
-    accent: teal
+    primary: deep purple
+    accent: cyan
 nav:
   - Home: index.md
   - Terminal experience: terminal-experience.md

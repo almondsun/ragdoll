@@ -1,10 +1,19 @@
 # Changelog
 
+## 2.0.1 — 2026-07-15
+
+- Restored RAGdoll's cat identity as a compact `11 x 6` block-pixel companion with a playful,
+  accessible cyan, violet, coral, and cream palette.
+- Replaced continuous full-mascot animation with short three-frame phase cameos that disappear
+  when work completes, with static reduced-motion and monochrome fallbacks.
+- Unified the terminal, README, documentation, favicon, social card, and deterministic screenshots
+  around the new cat artwork.
+
 ## 2.0.0 — 2026-07-15
 
 - Rebuilt interactive research as a fullscreen, conversation-first Textual workspace with compact,
   expandable transcript cards and responsive background operations.
-- Added the A3 Unicode pixel mascot, terminal-adaptive styling, reduced-motion and monochrome
+- Added the original A3 Unicode pixel mascot, terminal-adaptive styling, reduced-motion and monochrome
   behavior, an `80 x 24` resize guard, contextual activity states, and deterministic UI captures.
 - Added a multiline composer with slash completion, history recall/search, safe external-editor
   handoff, contextual help, and conventional clear/exit behavior.

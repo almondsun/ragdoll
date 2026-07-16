@@ -2,7 +2,7 @@
 
 RAGdoll 2.0 is a fullscreen, conversation-first terminal application. It borrows proven interaction
 patterns from the official Codex CLI, Claude Code, and GitHub Copilot CLI while retaining an
-independent research workflow, color language, and A3 rag-doll identity.
+independent research workflow and compact block-pixel cat identity.
 
 ![RAGdoll 2.0 welcome screen](assets/ragdoll-tui-welcome.svg)
 
@@ -18,9 +18,12 @@ separate focused dialogs. Long-running provider, scholarly-source, acquisition, 
 runs outside the rendering event loop. A provider operation already in flight is allowed to finish;
 the UI does not pretend that a blocking remote request was cancelled.
 
-The default appearance inherits the terminal background and foreground, then uses restrained teal,
-copper, success, warning, and error accents. `NO_COLOR` selects monochrome output. `--no-animation`
-keeps the mascot and activity mark static. Windows smaller than `80 x 24` show a resize overlay.
+The cat appears in a small welcome lockup and as a transient three-frame cameo when a major phase
+begins. It then holds a static pose beside the progress message and disappears when that operation
+finishes; mascot art is never repeated through the transcript. The cyan, violet, coral, and cream
+palette sits on the inherited terminal background. `NO_COLOR` selects monochrome output and
+`--no-animation` renders the final pose immediately. Windows smaller than `80 x 24` show a resize
+overlay.
 
 ## Keyboard and commands
 
@@ -64,8 +67,8 @@ v2 workspaces resume without conversion, and reading-list/dossier export formats
   transcript cells, overlays, command dispatch, and derived busy state.
 - [Claude Code interactive mode](https://code.claude.com/docs/en/interactive-mode): multiline input,
   history, detail inspection, and terminal-compatible shortcuts.
-- [GitHub Copilot CLI command reference](https://docs.github.com/copilot/reference/copilot-cli-reference/cli-command-reference):
-  discoverable slash commands, compact timelines, and keyboard-first navigation.
+- [GitHub Copilot CLI](https://github.com/github/copilot-cli): discoverable slash commands, compact
+  timelines, semantic mascot colors, and a short startup blink rather than continuous animation.
 
 These references define interaction expectations only. RAGdoll does not reuse their names,
 mascots, source code, or visual assets.

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from rich.cells import cell_len
 from rich.console import Console
 from textual.widgets import Input, SelectionList, Static, TextArea
 from typer.testing import CliRunner
@@ -32,7 +33,15 @@ from ragdoll.domain import (
 )
 from ragdoll.editor import ExternalEditorError, edit_text
 from ragdoll.interactive import InteractiveResearch
-from ragdoll.mascot import activity_frame, mascot_renderable, pixel_widths
+from ragdoll.mascot import (
+    FRAME_COUNT,
+    SPRITE_FRAMES,
+    activity_renderable,
+    mascot_renderable,
+    pixel_heights,
+    pixel_widths,
+    sprite_rows,
+)
 from ragdoll.planning import InterviewTurn
 from ragdoll.providers import FakeProvider, ProviderError
 from ragdoll.storage import Workspace
@@ -397,6 +406,84 @@ async def test_composer_help_completion_interrupt_and_card_detail(tmp_path, pape
 
 
 @pytest.mark.asyncio
+async def test_reduced_motion_cameo_is_transient_and_not_in_timeline(tmp_path, papers) -> None:
+    application = make_app(tmp_path, FakeProvider([]), papers)
+    async with application.run_test(size=(100, 30)) as pilot:
+        await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
+        cards_before = len(application.query(TimelineCard))
+        async with application.activity("searching", "Searching scholarly sources…"):
+            await pilot.pause()
+            console = Console(width=80, color_system=None)
+            visual = cast(Any, application.query_one("#activity", Static).render())
+            with console.capture() as capture:
+                console.print(visual._renderable)
+            rendered = capture.get()
+            assert "Searching scholarly sources" in rendered
+            assert "● working" in rendered
+        await pilot.pause()
+        visual = cast(Any, application.query_one("#activity", Static).render())
+        assert str(visual) == ""
+        assert len(application.query(TimelineCard)) == cards_before
+
+
+@pytest.mark.asyncio
+async def test_animated_cameo_runs_three_frames_once(tmp_path, papers, monkeypatch) -> None:
+    application = RagdollApp(tmp_path, Settings(animate=True), FakeProvider([]))
+    application.service.openalex = cast(Any, StaticSource(papers))
+    observed: list[int] = []
+
+    def capture_cameo(phase, frame, message, *, color=True):
+        observed.append(frame)
+        return f"{phase}:{frame}:{message}:{color}"
+
+    monkeypatch.setattr("ragdoll.tui.activity_renderable", capture_cameo)
+    async with application.run_test(size=(100, 30)) as pilot:
+        await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
+        await application._play_activity_cameo("planning", "Planning…")
+        assert observed == [0, 1, 2]
+        await pilot.pause(0.3)
+        assert observed == [0, 1, 2]
+
+
+@pytest.mark.asyncio
+async def test_activity_shows_result_phases_and_cleans_up_after_animation_failure(
+    tmp_path, papers, monkeypatch
+) -> None:
+    application = make_app(tmp_path, FakeProvider([]), papers)
+    observed: list[str] = []
+
+    async def capture_phase(phase, message):
+        observed.append(phase)
+
+    monkeypatch.setattr(application, "_play_activity_cameo", capture_phase)
+    async with application.run_test(size=(100, 30)) as pilot:
+        await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
+        async with application.activity("planning", "Planning…"):
+            pass
+        assert observed == ["planning", "success"]
+
+        observed.clear()
+        with pytest.raises(ValueError, match="provider failed"):
+            async with application.activity("searching", "Searching…"):
+                raise ValueError("provider failed")
+        assert observed == ["searching", "error"]
+
+        observed.clear()
+
+        async def fail_animation(phase, message):
+            observed.append(phase)
+            raise RuntimeError("animation failed")
+
+        monkeypatch.setattr(application, "_play_activity_cameo", fail_animation)
+        async with application.activity("staging", "Staging…"):
+            pass
+        await pilot.pause()
+        assert observed == ["staging", "success"]
+        assert not application._busy
+        assert application.query_one("#composer", TextArea).has_focus
+
+
+@pytest.mark.asyncio
 async def test_composer_submission_and_multiline_shortcuts(tmp_path, brief, plan, papers) -> None:
     provider = FakeProvider([InterviewTurn(complete=True), brief, plan])
     application = make_app(tmp_path, provider, papers)
@@ -574,9 +661,28 @@ def test_commands_mascot_rendering_and_markdown_helpers(investigation) -> None:
     assert {"plan", "papers", "dossier", "ask", "quit"} <= COMMAND_NAMES
     assert "/papers" in command_help()
     assert "Keyboard" in help_markdown()
-    assert pixel_widths() == {21}
-    assert "✓" in activity_frame("success", 20).plain
-    assert activity_frame("missing", 0).plain
+    assert pixel_widths() == {11}
+    assert pixel_heights() == {6}
+    assert {
+        cell_len(row) for frames in SPRITE_FRAMES.values() for frame in frames for row in frame
+    } == {11}
+    assert FRAME_COUNT == 3
+    assert set(SPRITE_FRAMES) == {
+        "welcome",
+        "planning",
+        "searching",
+        "staging",
+        "success",
+        "error",
+    }
+    assert sprite_rows("welcome", 99) == SPRITE_FRAMES["welcome"][-1]
+    assert all(
+        "\N{BOX DRAWINGS LIGHT DIAGONAL CROSS}" not in row and "X" not in row
+        for frames in SPRITE_FRAMES.values()
+        for frame in frames
+        for row in frame
+    )
+    assert activity_renderable("success", 20, "Complete", color=False)
     assert mascot_renderable(color=False)
     assert investigation.plan is not None and investigation.brief is not None
     assert investigation.plan.title in plan_markdown(
@@ -653,7 +759,7 @@ def test_cli_version_and_noninteractive_error(monkeypatch) -> None:
     runner = CliRunner()
     version = runner.invoke(cli_app, ["--version"])
     assert version.exit_code == 0
-    assert "ragdoll 2.0.0" in version.output
+    assert "ragdoll 2.0.1" in version.output
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("sys.stdout.isatty", lambda: False)
     result = runner.invoke(cli_app, ["--topic", "video"])

@@ -1,13 +1,13 @@
 <div align="center">
-  <img src="docs/assets/ragdoll-mascot.svg" alt="RAGdoll minimalist research rag doll" width="160">
+  <img src="docs/assets/ragdoll-mascot.svg" alt="RAGdoll block-pixel research cat" width="160">
   <h1>RAGdoll</h1>
   <p><strong>Turn a research question into an explainable, cited literature dossier—from your terminal.</strong></p>
   <p>Adaptive scoping, editable search plans, transparent ranking, local evidence, and auditable claims.</p>
 
   [![CI](https://github.com/almondsun/ragdoll/actions/workflows/ci.yml/badge.svg)](https://github.com/almondsun/ragdoll/actions/workflows/ci.yml)
-  [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-2aa198.svg)](https://almondsun.github.io/ragdoll/)
+  [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-56cfe1.svg)](https://almondsun.github.io/ragdoll/)
   [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-172a3a.svg)](pyproject.toml)
-  [![License: MIT](https://img.shields.io/badge/license-MIT-b87333.svg)](LICENSE)
+  [![License: MIT](https://img.shields.io/badge/license-MIT-9b5de5.svg)](LICENSE)
 </div>
 
 RAGdoll is an agentic research workspace for SOTA acceleration. It begins with an ambiguous goal,
@@ -93,6 +93,7 @@ reproducible search result, not the literature itself.
 
 ```bash
 uv run make check
+uv run make brand       # regenerate SVG and PNG identity assets
 uv run make screenshot  # regenerate the deterministic README TUI captures
 ```
 
@@ -106,9 +107,10 @@ Read the [architecture](docs/architecture.md), [planning contract](docs/planning
 
 ## Status
 
-`v2.0.0` preserves the completed research contract and rebuilds its interactive surface as a
-fullscreen, conversation-first terminal workspace. Existing v1 investigations, SQLite workspaces,
-provider settings, and export formats remain compatible; only the in-app slash vocabulary changed.
+`v2.0.1` preserves the completed research contract and presents its interactive surface as a
+fullscreen, conversation-first terminal workspace with a compact block-pixel cat companion.
+Existing v1 investigations, SQLite workspaces, provider settings, and export formats remain
+compatible; only the in-app slash vocabulary changed in v2.0.0.
 RAGdoll does not bypass paywalls, perform OCR, claim exhaustive coverage, prove novelty, or replace
 expert review. Research-gap validation and autonomous experiment design remain outside the current
 project scope.
