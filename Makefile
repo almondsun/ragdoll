@@ -1,4 +1,4 @@
-.PHONY: check format test
+.PHONY: check format screenshot test
 
 check:
 	ruff format --check .
@@ -11,6 +11,8 @@ format:
 	ruff format .
 	ruff check --fix .
 
+screenshot:
+	python scripts/capture_tui.py
+
 test:
 	pytest
-

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.0 — 2026-07-15
+
+- Rebuilt interactive research as a fullscreen, conversation-first Textual workspace with compact,
+  expandable transcript cards and responsive background operations.
+- Added the A3 Unicode pixel mascot, terminal-adaptive styling, reduced-motion and monochrome
+  behavior, an `80 x 24` resize guard, contextual activity states, and deterministic UI captures.
+- Added a multiline composer with slash completion, history recall/search, safe external-editor
+  handoff, contextual help, and conventional clear/exit behavior.
+- Replaced v1 paper-management commands with `/papers` and `/purge-evidence` with `/purge`, while
+  preserving migration hints and all shell-level commands.
+- Preserved v1 workspace schemas, investigations, evidence provenance, provider configuration, and
+  export formats.
+
 ## 1.0.0 — 2026-07-15
 
 - Added consent-gated acquisition of openly available PDFs with bounded, isolated extraction and

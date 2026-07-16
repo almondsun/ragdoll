@@ -35,7 +35,7 @@ The seven sections are executive summary, landscape and taxonomy, cross-paper co
 chronological development, agreements and disagreements, evidence limitations, and open questions.
 Each section is checkpointed as it completes, so an interrupted build can resume. Use
 `/dossier refresh SECTION` to regenerate one section, `/sources` to review acquisition provenance,
-and `/purge-evidence` to delete the local evidence cache and derived dossier state.
+and `/purge` to delete the local evidence cache and derived dossier state after confirmation.
 
 `/export` writes the reading list as Markdown, BibTeX, and JSON and, when present, the dossier as
 Markdown and JSON. The JSON dossier embeds the cited chunks needed to audit it.

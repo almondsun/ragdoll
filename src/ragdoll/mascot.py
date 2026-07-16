@@ -1,71 +1,58 @@
-"""Scrollback-safe patchwork rag-doll terminal companion."""
+"""Unicode pixel interpretation of the A3 RAGdoll mascot."""
+
+# The stitched X eyes intentionally use a box-drawing glyph.
+# ruff: noqa: RUF001
 
 from __future__ import annotations
 
-import os
-import sys
-import threading
-from collections.abc import Iterator
-from contextlib import contextmanager
-
-from rich.console import Console, Group
-from rich.live import Live
+from rich.console import Group, RenderableType
 from rich.text import Text
 
-WELCOME = r'''
-    .-""""-.      .----------------.
-   /_x___x_\   __/  curious minds   |
-  | (x)-(x) | /__   leave a trail.  |
-  |    _   ( )   '-----------------'
-   \__|_|__/       RAGdoll
-     /|_|
-'''.strip("\n")
+PIXEL_ROWS = (
+    "       ▄▄▄▄▄▄▄       ",
+    "    ▄███████████▄    ",
+    "   ███▄███████▄███   ",
+    "  ██  ╳  ███  ╳  ██  ",
+    "  ██▄▄▄▄▄███▄▄▄▄▄██  ",
+    "   █████▄   ▄█████   ",
+    "     ▀███▄▄▄███▀     ",
+    "       ▄████▄        ",
+    "     ▄███▀▀███▄      ",
+    "    ███▀  ●  ▀███    ",
+    "    ▀▀▀       ▀▀▀    ",
+)
 
-FRAMES = {
-    "planning": [r" (x)-(x)  ?", r" (x)-(x)  ??", r" (x)-(x)  ???"],
-    "searching": [r" (x)-(x)  ≋", r" (x)-(x)  ≋≋", r" (x)-(x)  ≋≋≋"],
-    "staging": [r" (x)-(x)  [·  ]", r" (x)-(x)  [·· ]", r" (x)-(x)  [···]"],
-    "success": [r" (x)-(x)  ✓", r" (x)-(x)  ✓✓"],
-    "error": [r" (x)-(x)  !", r" (x)-(x)  !!"],
+ACTIVITY_FRAMES: dict[str, tuple[str, ...]] = {
+    "planning": ("╳─╳  ◌", "╳─╳  ◔", "╳─╳  ◑", "╳─╳  ◕"),
+    "searching": ("╳─╳  ≋", "╳─╳  ≋≋", "╳─╳  ≋≋≋"),
+    "staging": ("╳─╳  [·  ]", "╳─╳  [·· ]", "╳─╳  [···]"),
+    "success": ("╳‿╳  ✓",),
+    "error": ("╳︵╳  !",),
 }
 
 
-class Mascot:
-    def __init__(self, console: Console, enabled: bool = True) -> None:
-        self.console = console
-        self.enabled = enabled and sys.stdout.isatty() and not os.getenv("NO_COLOR")
+def mascot_renderable(*, color: bool = True, blink: bool = False) -> RenderableType:
+    """Return a terminal-safe, fixed-width mascot and wordmark."""
+    style = "bold #2aa198" if color else "bold"
+    rows: tuple[str, ...] = PIXEL_ROWS
+    if blink:
+        rows = tuple(row.replace("╳", "━") for row in rows)
+    body = Text("\n".join(rows), style=style, justify="center")
+    title = Text("RAGdoll 2.0", style="bold #b87333" if color else "bold", justify="center")
+    subtitle = Text(
+        "research, with receipts",
+        style="italic dim",
+        justify="center",
+    )
+    return Group(body, title, subtitle)
 
-    def welcome(self) -> None:
-        self.console.print(Text(WELCOME, style="bold #2aa198"))
 
-    @contextmanager
-    def activity(self, state: str, message: str) -> Iterator[None]:
-        if not self.enabled:
-            self.console.print(f"[dim]• {message}[/dim]")
-            yield
-            return
-        frames = FRAMES.get(state, FRAMES["planning"])
-        stop = threading.Event()
-        live = Live(console=self.console, transient=True, refresh_per_second=8)
+def activity_frame(state: str, index: int, *, color: bool = True) -> Text:
+    frames = ACTIVITY_FRAMES.get(state, ACTIVITY_FRAMES["planning"])
+    style = "bold #b87333" if color else "bold"
+    return Text(frames[index % len(frames)], style=style)
 
-        def animate() -> None:
-            index = 0
-            while not stop.wait(0.22):
-                art = Text(frames[index % len(frames)], style="bold #b87333")
-                live.update(Group(art, Text(message, style="dim")), refresh=True)
-                index += 1
 
-        live.start()
-        thread = threading.Thread(target=animate, daemon=True)
-        thread.start()
-        try:
-            yield
-        finally:
-            stop.set()
-            thread.join(timeout=1)
-            live.stop()
-
-    def result(self, message: str, success: bool = True) -> None:
-        symbol = "✓" if success else "!"
-        style = "green" if success else "red"
-        self.console.print(f"[{style}]{symbol}[/{style}] {message}")
+def pixel_widths() -> set[int]:
+    """Expose row widths for deterministic layout tests."""
+    return {len(row) for row in PIXEL_ROWS}

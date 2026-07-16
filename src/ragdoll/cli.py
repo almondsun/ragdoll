@@ -27,6 +27,15 @@ def _root() -> Path:
     return Path.cwd()
 
 
+def _require_interactive_tty() -> None:
+    if not sys.stdin.isatty() or not sys.stdout.isatty() or os.getenv("TERM") == "dumb":
+        console.print(
+            "[red]RAGdoll could not start:[/red] interactive mode requires a TTY; "
+            "use `ragdoll investigations`, `show`, or `export` for non-interactive workflows"
+        )
+        raise typer.Exit(2)
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -42,6 +51,7 @@ def main(
         raise typer.Exit()
     if ctx.invoked_subcommand is not None:
         return
+    _require_interactive_tty()
     settings = load_settings(_root(), provider=provider, animate=not no_animation)
     try:
         InteractiveResearch(_root(), settings, make_provider(settings), console).start(topic)
@@ -66,6 +76,7 @@ def resume_command(
     provider: Annotated[str | None, typer.Option()] = None,
 ) -> None:
     """Resume the latest or selected investigation."""
+    _require_interactive_tty()
     workspace = Workspace(_root())
     try:
         investigation = workspace.load(investigation_id) if investigation_id else workspace.latest()

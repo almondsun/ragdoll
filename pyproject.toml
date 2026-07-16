@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ragdoll-research"
-version = "1.0.0"
+version = "2.0.0"
 description = "Turn a research question into an explainable, cited literature dossier from your terminal."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,9 +17,9 @@ dependencies = [
   "openai>=1.75,<3",
   "platformdirs>=4.3,<5",
   "pypdf>=5.4,<7",
-  "prompt-toolkit>=3.0.47,<4",
   "pydantic>=2.9,<3",
   "rich>=13.9,<15",
+  "textual>=3.0,<7",
   "typer>=0.15,<1",
 ]
 
@@ -29,6 +29,7 @@ dev = [
   "mypy>=1.13,<2",
   "pip-audit>=2.9,<3",
   "pytest>=9.0.3,<10",
+  "pytest-asyncio>=1.2,<2",
   "pytest-cov>=6,<8",
   "respx>=0.22,<1",
   "ruff>=0.9,<1",

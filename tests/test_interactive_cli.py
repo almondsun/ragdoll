@@ -1,21 +1,24 @@
 from __future__ import annotations
 
-import io
-import sys
-import time
+import asyncio
+import subprocess
+import threading
+from collections.abc import Callable
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 from rich.console import Console
+from textual.widgets import Input, SelectionList, Static, TextArea
 from typer.testing import CliRunner
 
-from ragdoll.cli import app
+from ragdoll.cli import app as cli_app
+from ragdoll.commands import COMMAND_NAMES, command_help, migration_hint, parse_command
 from ragdoll.config import Settings
 from ragdoll.domain import (
     ClarificationOption,
     ClarificationQuestion,
-    DocumentStatus,
     DossierStatus,
     EvidenceChunk,
     EvidenceDocument,
@@ -27,21 +30,25 @@ from ragdoll.domain import (
     RelevanceJudgment,
     ResearchDossier,
 )
+from ragdoll.editor import ExternalEditorError, edit_text
 from ragdoll.interactive import InteractiveResearch
-from ragdoll.mascot import Mascot
+from ragdoll.mascot import activity_frame, mascot_renderable, pixel_widths
 from ragdoll.planning import InterviewTurn
 from ragdoll.providers import FakeProvider, ProviderError
 from ragdoll.storage import Workspace
-
-
-class ScriptedSession:
-    def __init__(self, responses: list[str]) -> None:
-        self.responses = iter(responses)
-        self.messages: list[str] = []
-
-    def prompt(self, message: str) -> str:
-        self.messages.append(message)
-        return next(self.responses)
+from ragdoll.tui import (
+    ClarificationScreen,
+    ConfirmScreen,
+    DetailScreen,
+    PapersScreen,
+    PlanReviewScreen,
+    RagdollApp,
+    TimelineCard,
+    help_markdown,
+    paper_markdown,
+    papers_markdown,
+    plan_markdown,
+)
 
 
 class StaticSource:
@@ -91,22 +98,24 @@ def relevance(papers) -> RelevanceBatch:
     )
 
 
-def make_research(tmp_path, provider, responses, papers) -> InteractiveResearch:
-    console = Console(file=io.StringIO(), force_terminal=False, width=100)
-    research = InteractiveResearch(
-        tmp_path,
-        Settings(animate=False),
-        provider,
-        console,
-        cast(Any, ScriptedSession(responses)),
-    )
-    research.service.openalex = cast(Any, StaticSource(papers))
-    research.service.arxiv = cast(Any, StaticSource([]))
-    research.service.crossref = cast(Any, NoopCrossref())
-    return research
+def make_app(tmp_path: Path, provider, papers, **kwargs: Any) -> RagdollApp:
+    result = RagdollApp(tmp_path, Settings(animate=False), provider, **kwargs)
+    result.service.openalex = cast(Any, StaticSource(papers))
+    result.service.arxiv = cast(Any, StaticSource([]))
+    result.service.crossref = cast(Any, NoopCrossref())
+    return result
 
 
-def test_complete_interactive_flow(tmp_path, brief, plan, papers) -> None:
+async def wait_for(pilot, predicate: Callable[[], bool], attempts: int = 80) -> None:
+    for _ in range(attempts):
+        await pilot.pause(0.02)
+        if predicate():
+            return
+    raise AssertionError("TUI did not reach the expected state")
+
+
+@pytest.mark.asyncio
+async def test_complete_fullscreen_flow(tmp_path, brief, plan, papers) -> None:
     provider = FakeProvider(
         [
             InterviewTurn(complete=False, question=clarification()),
@@ -116,37 +125,30 @@ def test_complete_interactive_flow(tmp_path, brief, plan, papers) -> None:
             relevance(papers),
         ]
     )
-    research = make_research(
-        tmp_path,
-        provider,
-        [
-            "1",
-            "a",
-            "/inspect 1",
-            "/unstage 1",
-            "/stage 1",
-            "/staged",
-            "/candidates",
-            "/plan",
-            "/brief",
-            "/export",
-            "/help",
-            "/unknown",
-            "/quit",
-        ],
-        papers,
-    )
-    result = research.start("video generation")
-    assert result.status == InvestigationStatus.REVIEW
-    assert len(result.answers) == 1
-    assert (tmp_path / ".ragdoll" / "exports" / result.id / "reading-list.md").exists()
-    output = cast(io.StringIO, research.console.file).getvalue()
-    assert "Enter my own answer" in output
-    assert "Paper candidates" in output
-    assert "Unknown command" in output
+    application = make_app(tmp_path, provider, papers, topic="video generation")
+
+    async with application.run_test(size=(120, 40)) as pilot:
+        await wait_for(pilot, lambda: isinstance(application.screen, ClarificationScreen))
+        await pilot.press("1")
+        await wait_for(pilot, lambda: isinstance(application.screen, PlanReviewScreen))
+        await pilot.press("a")
+        await wait_for(
+            pilot,
+            lambda: (
+                application.investigation is not None
+                and application.investigation.status == InvestigationStatus.REVIEW
+            ),
+        )
+        assert application.query_one("#composer", TextArea).has_focus
+        assert application.investigation is not None
+        assert len(application.investigation.answers) == 1
+        assert len(application.investigation.papers) == len(papers)
+        assert len(application.query(".timeline-card")) >= 5
+        assert "staged" in str(application.query_one("#footer", Static).render())
 
 
-def test_custom_answer_validation_and_plan_edit(tmp_path, brief, plan, papers) -> None:
+@pytest.mark.asyncio
+async def test_custom_answer_plan_edit_back_and_quit(tmp_path, brief, plan, papers) -> None:
     revised = plan.model_copy(update={"title": "Revised plan"})
     provider = FakeProvider(
         [
@@ -157,70 +159,85 @@ def test_custom_answer_validation_and_plan_edit(tmp_path, brief, plan, papers) -
             revised,
         ]
     )
-    research = make_research(
-        tmp_path,
-        provider,
-        ["x", "4", "", "2", "e", "prefer recent work", "q"],
-        papers,
-    )
-    result = research.start("video")
-    assert result.plan == revised
-    assert result.status == InvestigationStatus.PLAN_REVIEW
+    application = make_app(tmp_path, provider, papers, topic="video")
+
+    async with application.run_test(size=(120, 40)) as pilot:
+        await wait_for(pilot, lambda: isinstance(application.screen, ClarificationScreen))
+        await pilot.press("4")
+        custom = application.screen.query_one("#custom-answer", Input)
+        custom.value = "Focus on controllability"
+        await pilot.press("enter")
+        await wait_for(pilot, lambda: isinstance(application.screen, PlanReviewScreen))
+        revision = application.screen.query_one("#plan-revision", Input)
+        revision.value = "prefer recent work"
+        application.screen.query_one("#edit").press()
+        await wait_for(
+            pilot,
+            lambda: (
+                isinstance(application.screen, PlanReviewScreen)
+                and application.investigation is not None
+                and application.investigation.plan == revised
+            ),
+        )
+        await pilot.press("q")
+        await pilot.pause()
+    assert application.return_value is not None
+    assert application.return_value.plan == revised
 
 
-def test_resume_and_helpers(tmp_path, investigation, brief, plan, papers, monkeypatch) -> None:
-    research = make_research(tmp_path, FakeProvider([]), ["/quit"], papers)
-    assert research.resume(investigation) == investigation
-    assert research._resolve_id(investigation, "1") == investigation.papers[0].paper.id
-    with pytest.raises(KeyError):
-        research._resolve_id(investigation, "999")
-    research._inspect(investigation, "missing")
-
-    monkeypatch.setattr(research, "_interview", lambda value: value)
-    interviewing = investigation.model_copy(update={"status": InvestigationStatus.INTERVIEW})
-    assert research.resume(interviewing) == interviewing
-    monkeypatch.setattr(research, "_review_plan", lambda value: value)
-    reviewing = investigation.model_copy(update={"status": InvestigationStatus.PLAN_REVIEW})
-    assert research.resume(reviewing) == reviewing
-
-    searching = investigation.model_copy(update={"status": InvestigationStatus.SEARCHING})
-    monkeypatch.setattr(research.service, "execute", lambda value: (investigation, []))
-    monkeypatch.setattr(research, "_review_collection", lambda value: value)
-    assert research.resume(searching) == investigation
-
-
-def test_dossier_requires_explicit_download_approval(tmp_path, investigation, papers) -> None:
-    research = make_research(tmp_path, FakeProvider([]), ["n"], papers)
-    research.service.workspace.save(investigation)
-    updated = research._dossier(investigation)
-    assert updated.dossier_status == DossierStatus.AWAITING_APPROVAL
-    assert research.service.workspace.list_documents(investigation.id) == []
-
-
-def test_collection_evidence_dossier_and_purge_commands(
-    tmp_path, investigation, papers, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.asyncio
+async def test_resume_collection_commands_and_migration_hints(
+    tmp_path, investigation, papers, monkeypatch
 ) -> None:
-    research = make_research(
+    application = make_app(
         tmp_path,
         FakeProvider([]),
-        [
-            "",
-            "/stage 99",
-            "/ask What improves coherence?",
-            "/evidence chunk-1",
-            "/evidence missing",
-            "/sources",
-            "/dossier",
-            "/dossier refresh Missing",
-            "/purge-evidence",
-            "n",
-            "/purge-evidence",
-            "yes",
-            "/quit",
-        ],
         papers,
+        investigation=investigation,
     )
-    workspace = research.service.workspace
+    application.service.workspace.save(investigation)
+
+    async with application.run_test(size=(120, 40)) as pilot:
+        await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
+        await application._handle_submission("/staged")
+        assert any("Command changed" in card.card_title for card in application.query(TimelineCard))
+
+        await application._handle_submission("/plan")
+        assert isinstance(application.screen, DetailScreen)
+        await pilot.press("escape")
+
+        papers_command = application.run_worker(application._handle_submission("/papers"))
+        await wait_for(pilot, lambda: isinstance(application.screen, PapersScreen))
+        listing = application.screen.query_one("#paper-list", SelectionList)
+        listing.toggle(investigation.papers[0].paper.id)
+        await pilot.press("f")
+        await pilot.press("f")
+        await pilot.press("down", "i")
+        assert isinstance(application.screen, DetailScreen)
+        await pilot.press("escape")
+        await pilot.press("escape")
+        await wait_for(pilot, lambda: not isinstance(application.screen, PapersScreen))
+        await papers_command.wait()
+
+        await application._handle_submission("/unknown")
+        await application._handle_submission("/evidence missing")
+        assert any(card.card_title == "Unknown command" for card in application.query(TimelineCard))
+        assert any(
+            card.card_title == "Evidence not found" for card in application.query(TimelineCard)
+        )
+
+
+@pytest.mark.asyncio
+async def test_dossier_consent_sources_ask_export_and_purge(
+    tmp_path, investigation, papers, monkeypatch
+) -> None:
+    application = make_app(
+        tmp_path,
+        FakeProvider([]),
+        papers,
+        investigation=investigation,
+    )
+    workspace = application.service.workspace
     workspace.save(investigation)
     document = EvidenceDocument(
         id="doc-1",
@@ -228,7 +245,7 @@ def test_collection_evidence_dossier_and_purge_commands(
         paper_id=investigation.papers[0].paper.id,
         source="fixture",
         evidence_level=EvidenceLevel.ABSTRACT,
-        status=DocumentStatus.FALLBACK,
+        status="fallback",
     )
     chunk = EvidenceChunk(
         id="chunk-1",
@@ -257,185 +274,527 @@ def test_collection_evidence_dossier_and_purge_commands(
         claims=[GroundedClaim(text="Diffusion improves coherence.", chunk_ids=[chunk.id])],
         explanation="Cited evidence.",
     )
-    monkeypatch.setattr(research.service, "ask", lambda value, question: answer)
+    monkeypatch.setattr(application.service, "ask", lambda value, question: answer)
 
-    def purge_failure(value):
-        raise OSError("permission denied")
+    async with application.run_test(size=(120, 40)) as pilot:
+        await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
+        await application._handle_submission("/sources")
+        await application._handle_submission("/evidence chunk-1")
+        await application._handle_submission("/ask What improves coherence?")
+        await application._handle_submission("/dossier")
+        assert any(
+            card.card_title == "Research dossier" for card in application.query(TimelineCard)
+        )
+        await application._handle_submission("/export")
+        assert (tmp_path / ".ragdoll" / "exports" / investigation.id / "dossier.md").exists()
 
-    monkeypatch.setattr(research.service, "purge_evidence", purge_failure)
+        purge = application.run_worker(application._purge())
+        await wait_for(pilot, lambda: isinstance(application.screen, ConfirmScreen))
+        await pilot.press("n")
+        await purge.wait()
+        assert workspace.load_dossier(investigation.id) is not None
 
-    result = research._review_collection(investigation)
-
-    assert result == investigation
-    output = cast(io.StringIO, research.console.file).getvalue()
-    assert "Diffusion improves coherence" in output
-    assert "Evidence citation not found" in output
-    assert "Dossier section not found" in output
-    assert "Evidence purge failed" in output
+        purge = application.run_worker(application._purge())
+        await wait_for(pilot, lambda: isinstance(application.screen, ConfirmScreen))
+        await pilot.press("y")
+        await purge.wait()
+        assert workspace.load_dossier(investigation.id) is None
 
 
-def test_dossier_approval_refresh_resume_and_build_paths(
-    tmp_path, investigation, papers, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.asyncio
+async def test_dossier_build_failure_and_refresh_paths(
+    tmp_path, investigation, papers, monkeypatch
 ) -> None:
-    research = make_research(tmp_path, FakeProvider([]), ["y"], papers)
-    research.service.workspace.save(investigation)
-    monkeypatch.setattr(research, "_build_dossier", lambda value: value)
-    approved = research._dossier(investigation)
-    assert approved.dossier_status == DossierStatus.AWAITING_APPROVAL
-    assert "send selected passages to openai" in cast(Any, research.session).messages[-1]
-
-    unstaged = investigation.model_copy(
-        update={
-            "papers": [item.model_copy(update={"staged": False}) for item in investigation.papers]
-        }
+    application = make_app(
+        tmp_path,
+        FakeProvider([]),
+        papers,
+        investigation=investigation,
     )
-    assert research._dossier(unstaged) == unstaged
-
-    chunk = EvidenceChunk(
-        id="chunk-1",
-        investigation_id=investigation.id,
-        paper_id=investigation.papers[0].paper.id,
-        document_id="doc-1",
-        locator="abstract",
-        evidence_level=EvidenceLevel.ABSTRACT,
-        text="Evidence.",
-        sha256="a" * 64,
-    )
-    dossier = ResearchDossier(
-        title="Dossier",
-        evidence_summary="1 abstract",
-        sections=[
-            {
-                "title": "Executive summary",
-                "claims": [{"text": "Evidence.", "chunk_ids": [chunk.id]}],
-            },
-            {"title": "Open questions", "claims": []},
-        ],
-    )
-    research.service.workspace.save_dossier(investigation.id, dossier)
-    assert research._dossier(investigation, "refresh Open questions") == investigation
-    assert research._dossier(investigation, "refresh Open questions") == investigation
-
-    partial = investigation.model_copy(update={"dossier_status": DossierStatus.PARTIAL})
-    research.session = cast(Any, ScriptedSession(["y"]))
-    assert research._dossier(partial) == partial
-
-
-def test_build_dossier_success_and_failure(
-    tmp_path, investigation, papers, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    research = make_research(tmp_path, FakeProvider([]), [], papers)
-    research.service.workspace.save(investigation)
-    dossier = ResearchDossier(
+    application.service.workspace.save(investigation)
+    built = ResearchDossier(
         title="Dossier",
         evidence_summary="No usable evidence was indexed.",
         sections=[{"title": "Executive summary", "claims": []}],
     )
     updated = investigation.model_copy(update={"dossier_status": DossierStatus.PARTIAL})
     monkeypatch.setattr(
-        research.service,
+        application.service,
         "build_dossier",
-        lambda value: (updated, dossier, ["abstract fallback"]),
+        lambda value: (updated, built, ["abstract fallback"]),
     )
-    assert research._build_dossier(investigation) == updated
 
-    def fail(value):
-        raise ProviderError("bad citations")
+    async with application.run_test(size=(120, 40)) as pilot:
+        await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
+        build = application.run_worker(application._dossier(""))
+        await wait_for(pilot, lambda: isinstance(application.screen, ConfirmScreen))
+        await pilot.press("y")
+        await build.wait()
+        assert any(
+            card.card_title == "Evidence fallback" for card in application.query(TimelineCard)
+        )
 
-    monkeypatch.setattr(research.service, "build_dossier", fail)
-    assert research._build_dossier(investigation) == investigation
+        application.service.workspace.save_dossier(investigation.id, built)
+        await application._dossier("refresh Missing")
+        assert any(
+            card.card_title == "Dossier section not found"
+            for card in application.query(TimelineCard)
+        )
 
+        def fail(value):
+            raise ProviderError("bad citations")
 
-def test_mascot_static_and_animated(monkeypatch: pytest.MonkeyPatch) -> None:
-    output = io.StringIO()
-    console = Console(file=output, force_terminal=False)
-    mascot = Mascot(console, enabled=False)
-    mascot.welcome()
-    with mascot.activity("planning", "Thinking"):
-        pass
-    mascot.result("Done")
-    mascot.result("Failed", success=False)
-    rendered = output.getvalue()
-    assert "RAGdoll" in rendered
-    assert "(x)-(x)" in rendered
-    assert "Thinking" in rendered
-
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-    animated = Mascot(console, enabled=True)
-    with animated.activity("searching", "Searching"):
-        time.sleep(0.25)
+        monkeypatch.setattr(application.service, "build_dossier", fail)
+        await application._build_dossier()
+        assert any(card.card_title == "Dossier failed" for card in application.query(TimelineCard))
 
 
-def test_cli_read_only_and_workspace_commands(
-    tmp_path: Path, investigation, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.asyncio
+async def test_composer_help_completion_interrupt_and_card_detail(tmp_path, papers) -> None:
+    application = make_app(tmp_path, FakeProvider([]), papers)
+    async with application.run_test(size=(100, 30)) as pilot:
+        await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
+        composer = application.query_one("#composer", TextArea)
+        application.command_history[:] = ["/plan", "/papers"]
+        composer.load_text("/pap")
+        await pilot.press("tab")
+        assert composer.text == "/papers "
+        composer.load_text("")
+        await pilot.press("up")
+        assert composer.text == "/papers"
+        await pilot.press("up")
+        assert composer.text == "/plan"
+        await pilot.press("down")
+        assert composer.text == "/papers"
+        composer.load_text("pla")
+        await pilot.press("ctrl+r")
+        assert composer.text == "/plan"
+        composer.load_text("/pa")
+        await pilot.pause()
+        assert application.query_one("#command-menu", Static).display
+        composer.load_text("ordinary prompt")
+        await pilot.pause()
+        assert not application.query_one("#command-menu", Static).display
+        composer.load_text("")
+        application.action_help()
+        assert isinstance(application.screen, DetailScreen)
+        await pilot.press("escape")
+        composer.load_text("draft")
+        application.action_interrupt()
+        assert composer.text == ""
+        await application.add_card("Expandable", "Summary", "# Details")
+        card = list(application.query(TimelineCard))[-1]
+        card.focus()
+        await pilot.press("enter")
+        assert isinstance(application.screen, DetailScreen)
+        await pilot.press("escape")
+        await pilot.resize_terminal(70, 20)
+        await pilot.pause()
+        assert application.query_one("#resize-warning", Static).display
+        await pilot.resize_terminal(100, 30)
+        await pilot.pause()
+        assert not application.query_one("#resize-warning", Static).display
+
+
+@pytest.mark.asyncio
+async def test_composer_submission_and_multiline_shortcuts(tmp_path, brief, plan, papers) -> None:
+    provider = FakeProvider([InterviewTurn(complete=True), brief, plan])
+    application = make_app(tmp_path, provider, papers)
+    async with application.run_test(size=(100, 30)) as pilot:
+        await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
+        composer = application.query_one("#composer", TextArea)
+        composer.load_text("first line")
+        await pilot.press("shift+enter")
+        assert "\n" in composer.text
+        composer.load_text("video generation")
+        await pilot.press("enter")
+        await wait_for(pilot, lambda: isinstance(application.screen, PlanReviewScreen))
+        assert application.investigation is not None
+        assert application.command_history == ["video generation"]
+        await pilot.press("q")
+
+
+@pytest.mark.asyncio
+async def test_pre_topic_commands_and_command_serialization(tmp_path, papers, monkeypatch) -> None:
+    application = make_app(tmp_path, FakeProvider([]), papers)
+    async with application.run_test(size=(100, 30)) as pilot:
+        await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
+        await application._handle_submission("/help")
+        assert isinstance(application.screen, DetailScreen)
+        assert application.investigation is None
+        await pilot.press("escape")
+        await application._handle_submission("/papers")
+        assert application.investigation is None
+        assert any(
+            card.card_title == "No active investigation" for card in application.query(TimelineCard)
+        )
+
+        active = 0
+        maximum_active = 0
+        events: list[str] = []
+
+        async def slow_submission(text: str) -> None:
+            nonlocal active, maximum_active
+            active += 1
+            maximum_active = max(maximum_active, active)
+            events.append(f"start:{text}")
+            await asyncio.sleep(0.02)
+            events.append(f"end:{text}")
+            active -= 1
+
+        monkeypatch.setattr(application, "_handle_submission", slow_submission)
+        await asyncio.gather(
+            application._run_submission("one"),
+            application._run_submission("two"),
+        )
+        assert maximum_active == 1
+        assert events == ["start:one", "end:one", "start:two", "end:two"]
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_and_pending_commands_cannot_exit(tmp_path, papers, monkeypatch) -> None:
+    provider = FakeProvider([InterviewTurn(complete=False, question=clarification())])
+    application = make_app(tmp_path, provider, papers, topic="video generation")
+    original_save = application.service.workspace.save
+    save_started = threading.Event()
+    allow_save = threading.Event()
+
+    def delayed_save(*args, **kwargs) -> None:
+        if not save_started.is_set():
+            save_started.set()
+            assert allow_save.wait(timeout=5)
+        original_save(*args, **kwargs)
+
+    monkeypatch.setattr(application.service.workspace, "save", delayed_save)
+    exit_calls: list[object] = []
+    monkeypatch.setattr(application, "exit", lambda value=None: exit_calls.append(value))
+    async with application.run_test(size=(100, 30)) as pilot:
+        await wait_for(pilot, save_started.is_set)
+        composer = application.query_one("#composer", TextArea)
+        assert composer.disabled
+        application.action_interrupt()
+        application.action_quit_empty()
+        assert exit_calls == []
+        allow_save.set()
+        await wait_for(pilot, lambda: isinstance(application.screen, ClarificationScreen))
+        application._command_pending = True
+        composer.disabled = True
+        application.action_interrupt()
+        application.action_quit_empty()
+        assert exit_calls == []
+        application._command_pending = False
+        await pilot.press("escape")
+
+
+@pytest.mark.asyncio
+async def test_command_edge_cases_and_app_actions(
+    tmp_path, investigation, papers, monkeypatch
 ) -> None:
+    unstaged = investigation.model_copy(
+        update={
+            "papers": [item.model_copy(update={"staged": False}) for item in investigation.papers]
+        }
+    )
+    application = make_app(
+        tmp_path,
+        FakeProvider([]),
+        papers,
+        investigation=unstaged,
+    )
+    application.service.workspace.save(unstaged)
+    async with application.run_test(size=(100, 30)) as pilot:
+        await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
+        composer = application.query_one("#composer", TextArea)
+
+        application._busy = True
+        await application._handle_submission("/help")
+        application.action_interrupt()
+        composer.disabled = True
+        application.action_external_editor()
+        composer.disabled = False
+        application._busy = False
+
+        await application._handle_submission("/ask")
+        await application._handle_submission("/evidence")
+        await application._handle_submission("/dossier")
+        assert any(card.card_title == "Usage" for card in application.query(TimelineCard))
+        assert any(
+            card.card_title == "Dossier unavailable" for card in application.query(TimelineCard)
+        )
+
+        monkeypatch.setattr(
+            application.service,
+            "ask",
+            lambda value, question: (_ for _ in ()).throw(ValueError("no evidence")),
+        )
+        await application._handle_submission("What is supported?")
+        assert any(
+            card.card_title == "Could not answer" for card in application.query(TimelineCard)
+        )
+
+        assert application.investigation is not None
+        application.investigation = application.investigation.model_copy(
+            update={"plan": None, "brief": None}
+        )
+        await application._handle_submission("/plan")
+        assert any(
+            card.card_title == "Plan unavailable" for card in application.query(TimelineCard)
+        )
+
+        composer.load_text("/zz")
+        await pilot.pause()
+        assert not application.query_one("#command-menu", Static).display
+
+        monkeypatch.setattr(
+            "ragdoll.tui.edit_text",
+            lambda text: (_ for _ in ()).throw(ExternalEditorError("editor unavailable")),
+        )
+        monkeypatch.setattr(application, "suspend", lambda: nullcontext())
+        composer.load_text("draft")
+        application.action_external_editor()
+        application.action_interrupt()
+        assert composer.text == ""
+        application._empty_interrupts = 0
+        application.action_interrupt()
+        assert application._empty_interrupts == 1
+
+        await application._handle_submission("/help")
+        assert isinstance(application.screen, DetailScreen)
+        await pilot.press("escape")
+        application.action_quit_empty()
+
+
+def test_commands_mascot_rendering_and_markdown_helpers(investigation) -> None:
+    assert parse_command("/ASK why?") == ("ask", "why?")
+    assert parse_command("/ask\twhy now?") == ("ask", "why now?")
+    assert parse_command("/ask\nwhy now?") == ("ask", "why now?")
+    assert parse_command("a plain question") == ("", "a plain question")
+    assert migration_hint("stage") == "/stage was replaced in RAGdoll 2.0. Use /papers."
+    assert migration_hint("ask") is None
+    assert {"plan", "papers", "dossier", "ask", "quit"} <= COMMAND_NAMES
+    assert "/papers" in command_help()
+    assert "Keyboard" in help_markdown()
+    assert pixel_widths() == {21}
+    assert "✓" in activity_frame("success", 20).plain
+    assert activity_frame("missing", 0).plain
+    assert mascot_renderable(color=False)
+    assert investigation.plan is not None and investigation.brief is not None
+    assert investigation.plan.title in plan_markdown(
+        investigation.plan, investigation.brief.objective
+    )
+    assert investigation.papers[0].paper.title in paper_markdown(investigation.papers[0])
+    assert "Staged" in papers_markdown(investigation)
+
+
+def test_external_editor_is_shell_free_and_bounded(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def successful(argv, **kwargs):
+        captured["argv"] = argv
+        captured.update(kwargs)
+        Path(argv[-1]).write_text("revised", encoding="utf-8")
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(subprocess, "run", successful)
+    assert edit_text("draft", {"VISUAL": "code --wait"}) == "revised"
+    assert captured["argv"][:2] == ["code", "--wait"]
+    assert captured["shell"] is False
+    with pytest.raises(ExternalEditorError, match="Set VISUAL"):
+        edit_text("draft", {})
+    with pytest.raises(ExternalEditorError, match="Invalid editor"):
+        edit_text("draft", {"EDITOR": "'"})
+    with pytest.raises(ExternalEditorError, match="editor limit"):
+        edit_text("x" * (1024 * 1024 + 1), {"EDITOR": "false"})
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda argv, **kwargs: subprocess.CompletedProcess(argv, 2),
+    )
+    with pytest.raises(ExternalEditorError, match="status 2"):
+        edit_text("draft", {"EDITOR": "false"})
+
+
+@pytest.mark.asyncio
+async def test_dossier_preview_marks_metadata_only_papers(tmp_path, investigation, papers) -> None:
+    metadata_paper = papers[0].model_copy(update={"abstract": None, "fulltext_candidates": []})
+    metadata_item = investigation.papers[0].model_copy(update={"paper": metadata_paper})
+    metadata_investigation = investigation.model_copy(update={"papers": [metadata_item]})
+    application = make_app(
+        tmp_path,
+        FakeProvider([]),
+        [metadata_paper],
+        investigation=metadata_investigation,
+    )
+    application.service.workspace.save(metadata_investigation)
+    async with application.run_test(size=(100, 30)) as pilot:
+        await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
+        dossier = application.run_worker(application._dossier(""))
+        await wait_for(pilot, lambda: isinstance(application.screen, ConfirmScreen))
+        assert "metadata only" in application.screen.message
+        await pilot.press("n")
+        await dossier.wait()
+
+
+def test_interactive_adapter_requires_tty(tmp_path, monkeypatch) -> None:
+    research = InteractiveResearch(
+        tmp_path,
+        Settings(animate=False),
+        FakeProvider([]),
+        Console(force_terminal=False),
+    )
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: False)
+    with pytest.raises(ValueError, match="requires a TTY"):
+        research.start("topic")
+
+
+def test_cli_version_and_noninteractive_error(monkeypatch) -> None:
+    runner = CliRunner()
+    version = runner.invoke(cli_app, ["--version"])
+    assert version.exit_code == 0
+    assert "ragdoll 2.0.0" in version.output
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: False)
+    result = runner.invoke(cli_app, ["--topic", "video"])
+    assert result.exit_code == 2
+    assert "requires a TTY" in result.output
+
+
+def test_shell_commands_init_list_show_and_export(tmp_path, investigation, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
-    assert runner.invoke(app, ["--version"]).exit_code == 0
-    assert runner.invoke(app, ["init"]).exit_code == 0
-    Workspace(tmp_path).save(investigation)
-    assert investigation.id in runner.invoke(app, ["investigations"]).stdout
-    assert investigation.original_prompt in runner.invoke(app, ["show", investigation.id]).stdout
-    result = runner.invoke(app, ["export", investigation.id, "--format", "json"])
-    assert result.exit_code == 0
-    assert (tmp_path / ".ragdoll" / "exports" / f"{investigation.id}.json").exists()
+    initialized = runner.invoke(cli_app, ["init"])
+    assert initialized.exit_code == 0
     workspace = Workspace(tmp_path)
-    document = EvidenceDocument(
-        id="doc-cli",
-        investigation_id=investigation.id,
-        paper_id=investigation.papers[0].paper.id,
-        source="fixture",
-        evidence_level=EvidenceLevel.ABSTRACT,
-        status=DocumentStatus.FALLBACK,
-    )
-    chunk = EvidenceChunk(
-        id="chunk-cli",
-        investigation_id=investigation.id,
-        paper_id=document.paper_id,
-        document_id=document.id,
-        locator="abstract",
-        evidence_level=EvidenceLevel.ABSTRACT,
-        text="Evidence.",
-        sha256="a" * 64,
-    )
-    workspace.save_document(document, [chunk])
-    workspace.save_dossier(
-        investigation.id,
-        ResearchDossier(
-            title="Dossier",
-            evidence_summary="1 abstract",
-            sections=[
-                {
-                    "title": "Summary",
-                    "claims": [{"text": "Evidence.", "chunk_ids": [chunk.id]}],
-                }
-            ],
-        ),
-    )
-    assert runner.invoke(app, ["export", investigation.id, "--format", "dossier"]).exit_code == 0
-    assert (
-        runner.invoke(app, ["export", investigation.id, "--format", "dossier-json"]).exit_code == 0
-    )
-    assert runner.invoke(app, ["doctor"]).exit_code == 0
-    monkeypatch.setenv("RAGDOLL_PROVIDER", "ollama")
+    workspace.save(investigation)
 
-    class TagsResponse:
+    listed = runner.invoke(cli_app, ["investigations"])
+    assert listed.exit_code == 0
+    assert investigation.id in listed.output
+    shown = runner.invoke(cli_app, ["show", investigation.id])
+    assert shown.exit_code == 0
+    assert investigation.original_prompt in shown.output
+    missing = runner.invoke(cli_app, ["show", "missing"])
+    assert missing.exit_code == 2
+
+    for format_name, suffix in (("markdown", "md"), ("bibtex", "bib"), ("json", "json")):
+        destination = tmp_path / f"reading-list.{suffix}"
+        result = runner.invoke(
+            cli_app,
+            ["export", investigation.id, "--format", format_name, "--output", str(destination)],
+        )
+        assert result.exit_code == 0
+        assert destination.exists()
+    invalid = runner.invoke(cli_app, ["export", investigation.id, "--format", "xml"])
+    assert invalid.exit_code == 2
+
+
+def test_shell_dossier_exports(tmp_path, investigation, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    workspace = Workspace(tmp_path)
+    workspace.save(investigation)
+    dossier = ResearchDossier(
+        title="Dossier",
+        evidence_summary="Metadata only",
+        sections=[{"title": "Executive summary", "claims": []}],
+    )
+    workspace.save_dossier(investigation.id, dossier)
+    runner = CliRunner()
+    for format_name, suffix in (("dossier", "md"), ("dossier-json", "json")):
+        destination = tmp_path / f"dossier.{suffix}"
+        result = runner.invoke(
+            cli_app,
+            ["export", investigation.id, "--format", format_name, "--output", str(destination)],
+        )
+        assert result.exit_code == 0
+        assert destination.exists()
+
+    workspace.purge_evidence(investigation.id)
+    missing = runner.invoke(cli_app, ["export", investigation.id, "--format", "dossier"])
+    assert missing.exit_code == 2
+
+
+def test_cli_main_and_resume_delegate_to_tui(tmp_path, investigation, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    Workspace(tmp_path).save(investigation)
+    calls: list[tuple[str, object]] = []
+
+    class FakeInteractive:
+        def __init__(self, root, settings, provider, console=None) -> None:
+            calls.append(("init", root))
+
+        def start(self, topic):
+            calls.append(("start", topic))
+            return investigation
+
+        def resume(self, value):
+            calls.append(("resume", value.id))
+            return value
+
+    monkeypatch.setattr("ragdoll.cli.InteractiveResearch", FakeInteractive)
+    monkeypatch.setattr("ragdoll.cli.make_provider", lambda settings: FakeProvider([]))
+    monkeypatch.setattr("ragdoll.cli._require_interactive_tty", lambda: None)
+    runner = CliRunner()
+    assert runner.invoke(cli_app, ["--topic", "video", "--no-animation"]).exit_code == 0
+    assert runner.invoke(cli_app, ["resume"]).exit_code == 0
+    assert runner.invoke(cli_app, ["resume", investigation.id]).exit_code == 0
+    assert ("start", "video") in calls
+    assert ("resume", investigation.id) in calls
+    missing = runner.invoke(cli_app, ["resume", "missing"])
+    assert missing.exit_code == 2
+
+
+def test_cli_startup_errors_interrupt_and_doctor(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("ragdoll.cli._require_interactive_tty", lambda: None)
+    runner = CliRunner()
+
+    monkeypatch.setattr(
+        "ragdoll.cli.make_provider",
+        lambda settings: (_ for _ in ()).throw(ProviderError("unavailable")),
+    )
+    failed = runner.invoke(cli_app, ["--topic", "video"])
+    assert failed.exit_code == 2
+    assert "unavailable" in failed.output
+
+    class Interrupted:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def start(self, topic):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr("ragdoll.cli.make_provider", lambda settings: FakeProvider([]))
+    monkeypatch.setattr("ragdoll.cli.InteractiveResearch", Interrupted)
+    interrupted = runner.invoke(cli_app, ["--topic", "video"])
+    assert interrupted.exit_code == 0
+    assert "Investigation saved" in interrupted.output
+
+    monkeypatch.setattr(
+        "ragdoll.cli.load_settings", lambda *args, **kwargs: Settings(provider="openai")
+    )
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    doctor = runner.invoke(cli_app, ["doctor"])
+    assert doctor.exit_code == 0
+    assert "OPENAI_API_KEY: missing" in doctor.output
+
+    class Response:
         def raise_for_status(self) -> None:
-            return None
+            pass
 
         def json(self):
             return {"models": [{"name": "qwen3:4b"}]}
 
-    monkeypatch.setattr("ragdoll.cli.httpx.get", lambda *args, **kwargs: TagsResponse())
-    assert "Ollama" in runner.invoke(app, ["doctor"]).stdout
-    assert runner.invoke(app, ["export", investigation.id, "--format", "pdf"]).exit_code != 0
-
-
-def test_cli_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    runner = CliRunner()
-    assert runner.invoke(app, ["--topic", "topic"]).exit_code == 2
-    assert runner.invoke(app, ["resume"]).exit_code == 2
-    assert runner.invoke(app, ["show", "missing"]).exit_code == 2
+    monkeypatch.setattr(
+        "ragdoll.cli.load_settings", lambda *args, **kwargs: Settings(provider="ollama")
+    )
+    monkeypatch.setattr("ragdoll.cli.httpx.get", lambda *args, **kwargs: Response())
+    healthy = runner.invoke(cli_app, ["doctor"])
+    assert "model: available" in healthy.output
+    monkeypatch.setattr(
+        "ragdoll.cli.httpx.get",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("bad response")),
+    )
+    unhealthy = runner.invoke(cli_app, ["doctor"])
+    assert "unreachable" in unhealthy.output

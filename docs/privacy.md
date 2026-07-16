@@ -13,9 +13,12 @@ pages and 45 seconds by default. The PDF worker fails closed when operating-syst
 are unavailable and is capped at 768 MiB of address space, 40 CPU seconds, and 32 MiB of extracted
 output. Paper content is treated as untrusted data and never executed.
 
-Approved PDFs are cached beneath `.ragdoll/documents/`, which is ignored by Git. `/purge-evidence`
+Approved PDFs are cached beneath `.ragdoll/documents/`, which is ignored by Git. `/purge`
 deletes cached documents, indexed chunks, dossier sections, and saved answers for the investigation.
 Workspace directories are restricted to the current user (`0700`) and databases, cached documents,
 and exports to `0600`.
+`Ctrl+G` writes only the current prompt draft to a private (`0600`) temporary file and invokes the
+configured editor directly without a shell. The file is deleted when the editor exits and prompts
+larger than 1 MiB are rejected.
 RAGdoll does not bypass paywalls, perform OCR, scrape Google Scholar, deserialize checkpoints, or run
 commands proposed by papers. Exports include evidence levels and stable chunk citations.

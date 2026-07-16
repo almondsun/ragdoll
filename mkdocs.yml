@@ -10,6 +10,7 @@ theme:
     accent: teal
 nav:
   - Home: index.md
+  - Terminal experience: terminal-experience.md
   - Planning contract: planning-contract.md
   - Architecture: architecture.md
   - Retrieval and ranking: retrieval-and-ranking.md

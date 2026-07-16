@@ -4,7 +4,7 @@ message: If RAGdoll supports your work, cite the software release.
 type: software
 authors:
   - family-names: almondsun
-version: 1.0.0
+version: 2.0.0
 date-released: 2026-07-15
 repository-code: https://github.com/almondsun/ragdoll
 license: MIT

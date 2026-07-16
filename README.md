@@ -17,37 +17,39 @@ a diverse collection of scholarly papers with visible reasons and provenance. Wi
 explicit approval, it downloads available open PDFs, builds a local page-aware evidence index, and
 produces a claim-level cited research dossier that can be questioned from the same terminal.
 
+<p align="center">
+  <img src="docs/assets/ragdoll-tui.svg" alt="RAGdoll 2.0 fullscreen terminal workspace" width="920">
+</p>
+
 ## The interaction
 
-```text
-$ ragdoll --topic "I want to understand video generation models"
-
-What are you trying to get from this investigation?
-
-  1. Build a technical understanding
-  2. Find the current state of the art
-  3. Identify a feasible research direction
-  4. Enter my own answer
-
-Select [1-4]:
-```
+`ragdoll` opens a fullscreen, keyboard-first research conversation. Its adaptive interview uses
+focused selection dialogs with exactly three proposed answers and a fourth custom answer. The
+approved plan, paper collection, evidence acquisition, dossier, and grounded answers appear as
+compact timeline cards; focus a card and press `Enter` to inspect its full detail.
 
 RAGdoll asks at most six adaptive questions. The model supplies exactly three proposed answers;
 the terminal owns the fourth custom-answer option. The resulting brief and query plan are shown for
 editing and explicit approval before any scholarly API is contacted.
 
-After discovery:
+After discovery, use the redesigned v2 commands:
 
 ```text
-ragdoll> /staged
-ragdoll> /inspect 3
-ragdoll> /unstage 3
-ragdoll> /stage 8
-ragdoll> /dossier
-ragdoll> /ask Which evaluation limitations recur across these papers?
-ragdoll> /evidence chunk-...
-ragdoll> /export
+/papers                         browse, inspect, stage, and unstage
+/plan                           inspect the approved plan
+/dossier                        build or read the cited dossier
+/dossier refresh Open questions regenerate one section
+/ask Which limitations recur?   ask against indexed evidence
+/evidence chunk-...             inspect an exact cited passage
+/sources                        audit evidence provenance
+/export                         write Markdown, BibTeX, and JSON
+/purge                          delete local evidence after confirmation
 ```
+
+Type `/` for completion or `?` on an empty composer for help. `Shift+Enter`/`Ctrl+J` inserts a
+newline, `Ctrl+R` recalls matching history, and `Ctrl+G` opens `$VISUAL` or `$EDITOR`. Interactive
+mode requires a TTY and an `80 x 24` terminal; `investigations`, `show`, `export`, and `doctor`
+remain conventional shell commands for automation and troubleshooting.
 
 ## Install
 
@@ -91,6 +93,7 @@ reproducible search result, not the literature itself.
 
 ```bash
 uv run make check
+uv run make screenshot  # regenerate the deterministic README TUI captures
 ```
 
 Normal CI is offline: provider and scholarly-source behavior is tested through strict contracts and
@@ -103,7 +106,9 @@ Read the [architecture](docs/architecture.md), [planning contract](docs/planning
 
 ## Status
 
-`v1.0.0` completes the first end-to-end product contract: clarify, approve, discover, curate,
-approve evidence acquisition, synthesize, inspect citations, ask bounded questions, and export.
+`v2.0.0` preserves the completed research contract and rebuilds its interactive surface as a
+fullscreen, conversation-first terminal workspace. Existing v1 investigations, SQLite workspaces,
+provider settings, and export formats remain compatible; only the in-app slash vocabulary changed.
 RAGdoll does not bypass paywalls, perform OCR, claim exhaustive coverage, prove novelty, or replace
-expert review. Research-gap validation and autonomous experiment design remain outside v1.
+expert review. Research-gap validation and autonomous experiment design remain outside the current
+project scope.
