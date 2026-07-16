@@ -59,7 +59,9 @@ class OpenAIProvider:
 class OllamaProvider:
     def __init__(self, settings: Settings, client: httpx.Client | None = None) -> None:
         self.settings = settings
-        self.client = client or httpx.Client(timeout=settings.ollama_timeout_seconds)
+        self.client = client or httpx.Client(
+            timeout=settings.ollama_timeout_seconds, trust_env=False
+        )
 
     def structured(
         self, *, instructions: str, prompt: str, response_model: type[T], quality: bool = False

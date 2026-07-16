@@ -17,6 +17,7 @@ from typer.testing import CliRunner
 from ragdoll.cli import app as cli_app
 from ragdoll.commands import COMMAND_NAMES, command_help, migration_hint, parse_command
 from ragdoll.config import Settings
+from ragdoll.contracts import evidence_fingerprint, inference_fingerprint, staged_fingerprint
 from ragdoll.domain import (
     ClarificationOption,
     ClarificationQuestion,
@@ -248,6 +249,10 @@ async def test_dossier_consent_sources_ask_export_and_purge(
     )
     workspace = application.service.workspace
     workspace.save(investigation)
+    acquisition = inference_fingerprint(
+        investigation, application.service.evidence_approval_details(investigation)
+    )
+    acquired_ids = set(application.service.acquisition_paper_ids(investigation))
     document = EvidenceDocument(
         id="doc-1",
         investigation_id=investigation.id,
@@ -255,6 +260,7 @@ async def test_dossier_consent_sources_ask_export_and_purge(
         source="fixture",
         evidence_level=EvidenceLevel.ABSTRACT,
         status="fallback",
+        staged_fingerprint=acquisition,
     )
     chunk = EvidenceChunk(
         id="chunk-1",
@@ -276,6 +282,15 @@ async def test_dossier_consent_sources_ask_export_and_purge(
                 "claims": [{"text": "Coherence improves.", "chunk_ids": [chunk.id]}],
             }
         ],
+        staged_fingerprint=staged_fingerprint(investigation),
+        evidence_fingerprint=evidence_fingerprint(
+            investigation,
+            workspace.list_documents(investigation.id),
+            acquired_ids,
+            acquisition,
+        ),
+        acquisition_fingerprint=acquisition,
+        acquired_paper_ids=sorted(acquired_ids),
     )
     workspace.save_dossier(investigation.id, dossier)
     answer = GroundedAnswer(
@@ -321,10 +336,23 @@ async def test_dossier_build_failure_and_refresh_paths(
         investigation=investigation,
     )
     application.service.workspace.save(investigation)
+    acquisition = inference_fingerprint(
+        investigation, application.service.evidence_approval_details(investigation)
+    )
+    acquired_ids = set(application.service.acquisition_paper_ids(investigation))
     built = ResearchDossier(
         title="Dossier",
         evidence_summary="No usable evidence was indexed.",
         sections=[{"title": "Executive summary", "claims": []}],
+        staged_fingerprint=staged_fingerprint(investigation),
+        evidence_fingerprint=evidence_fingerprint(
+            investigation,
+            application.service.workspace.list_documents(investigation.id),
+            acquired_ids,
+            acquisition,
+        ),
+        acquisition_fingerprint=acquisition,
+        acquired_paper_ids=sorted(acquired_ids),
     )
     updated = investigation.model_copy(update={"dossier_status": DossierStatus.PARTIAL})
     monkeypatch.setattr(
@@ -813,10 +841,16 @@ def test_shell_dossier_exports(tmp_path, investigation, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     workspace = Workspace(tmp_path)
     workspace.save(investigation)
+    acquisition = "a" * 64
+    acquired_ids = {item.paper.id for item in investigation.papers if item.staged}
     dossier = ResearchDossier(
         title="Dossier",
         evidence_summary="Metadata only",
         sections=[{"title": "Executive summary", "claims": []}],
+        staged_fingerprint=staged_fingerprint(investigation),
+        evidence_fingerprint=evidence_fingerprint(investigation, [], acquired_ids, acquisition),
+        acquisition_fingerprint=acquisition,
+        acquired_paper_ids=sorted(acquired_ids),
     )
     workspace.save_dossier(investigation.id, dossier)
     runner = CliRunner()

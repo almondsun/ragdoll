@@ -6,13 +6,23 @@ import os
 import re
 import shutil
 import sqlite3
-from contextlib import closing
+import stat
+from contextlib import closing, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .domain import EvidenceChunk, EvidenceDocument, GroundedAnswer, Investigation, ResearchDossier
+from .domain import (
+    ApprovalKind,
+    ApprovalRecord,
+    EvidenceChunk,
+    EvidenceDocument,
+    GroundedAnswer,
+    Investigation,
+    ResearchDossier,
+)
+from .safe_io import ensure_no_symlink, private_directory
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class Workspace:
@@ -23,8 +33,9 @@ class Workspace:
         self._permissions_protected = False
 
     def initialize(self) -> None:
-        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self.directory.chmod(0o700)
+        private_directory(self.directory, protect_existing=True)
+        if self.path.is_symlink():
+            raise OSError("refusing to open a symlinked workspace database")
         with closing(self._connect()) as connection:
             connection.executescript(
                 """
@@ -52,11 +63,14 @@ class Workspace:
                     "INSERT INTO schema_version(version) VALUES (?)", (SCHEMA_VERSION,)
                 )
                 self._create_evidence_schema(connection)
-            elif row[0] == 1:
+                self._create_approval_schema(connection)
+            elif row[0] in {1, 2}:
                 self._create_evidence_schema(connection)
+                self._create_approval_schema(connection)
                 connection.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
             elif row[0] == SCHEMA_VERSION:
                 self._create_evidence_schema(connection)
+                self._create_approval_schema(connection)
             else:
                 raise RuntimeError(f"unsupported workspace schema version {row[0]}")
             connection.commit()
@@ -106,6 +120,58 @@ class Workspace:
             );
             """
         )
+
+    def _create_approval_schema(self, connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS approvals (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                investigation_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                approved_at TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                FOREIGN KEY(investigation_id) REFERENCES investigations(id)
+            );
+            CREATE INDEX IF NOT EXISTS approval_lookup
+                ON approvals(investigation_id, kind, fingerprint);
+            """
+        )
+
+    def approve(self, approval: ApprovalRecord) -> None:
+        self.initialize()
+        with closing(self._connect()) as connection:
+            connection.execute(
+                """INSERT INTO approvals(
+                    investigation_id, kind, fingerprint, approved_at, payload
+                ) VALUES (?, ?, ?, ?, ?)""",
+                (
+                    approval.investigation_id,
+                    approval.kind,
+                    approval.fingerprint,
+                    approval.approved_at.isoformat(),
+                    approval.model_dump_json(),
+                ),
+            )
+            connection.commit()
+
+    def approval_for(
+        self, investigation_id: str, kind: ApprovalKind, fingerprint: str
+    ) -> ApprovalRecord | None:
+        self.initialize()
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """SELECT investigation_id, kind, fingerprint, payload FROM approvals
+                WHERE investigation_id = ? AND kind = ? AND fingerprint = ?
+                ORDER BY sequence DESC LIMIT 1""",
+                (investigation_id, kind, fingerprint),
+            ).fetchone()
+        if row is None:
+            return None
+        approval = ApprovalRecord.model_validate_json(row[3])
+        if (approval.investigation_id, approval.kind, approval.fingerprint) != row[:3]:
+            raise RuntimeError("approval payload does not match its indexed contract")
+        return approval
 
     def save(self, investigation: Investigation, event: str = "snapshot") -> None:
         self.initialize()
@@ -230,21 +296,32 @@ class Workspace:
         query: str,
         limit: int = 3,
         per_paper_limit: int | None = None,
+        paper_ids: set[str] | None = None,
     ) -> list[EvidenceChunk]:
         self.initialize()
         terms = [term for term in re.findall(r"[A-Za-z0-9]{2,}", query.casefold())][:24]
         if not terms:
             return []
+        if paper_ids is not None and not paper_ids:
+            return []
         expression = " OR ".join(f'"{term}"' for term in dict.fromkeys(terms))
-        fetch_limit = limit if per_paper_limit is None else limit * 4
+        fetch_limit = limit if per_paper_limit is None else max(limit * 12, 48)
+        paper_clause = ""
+        parameters: list[object] = [expression, investigation_id]
+        if paper_ids is not None:
+            placeholders = ",".join("?" for _ in paper_ids)
+            paper_clause = f" AND evidence_chunks.paper_id IN ({placeholders})"
+            parameters.extend(sorted(paper_ids))
+        parameters.append(fetch_limit)
         with closing(self._connect()) as connection:
             rows = connection.execute(
-                """SELECT evidence_chunks.payload
+                f"""SELECT evidence_chunks.payload
                 FROM evidence_fts
                 JOIN evidence_chunks ON evidence_chunks.id = evidence_fts.chunk_id
                 WHERE evidence_fts MATCH ? AND evidence_fts.investigation_id = ?
+                {paper_clause}
                 ORDER BY bm25(evidence_fts) LIMIT ?""",
-                (expression, investigation_id, fetch_limit),
+                parameters,
             ).fetchall()
         chunks = [EvidenceChunk.model_validate_json(row[0]) for row in rows]
         if per_paper_limit is None:
@@ -312,6 +389,17 @@ class Workspace:
             )
             connection.commit()
 
+    def invalidate_derived(self, investigation_id: str) -> None:
+        self.initialize()
+        with closing(self._connect()) as connection:
+            connection.execute(
+                "DELETE FROM dossiers WHERE investigation_id = ?", (investigation_id,)
+            )
+            connection.execute(
+                "DELETE FROM questions WHERE investigation_id = ?", (investigation_id,)
+            )
+            connection.commit()
+
     def purge_evidence(self, investigation_id: str) -> None:
         self.initialize()
         documents = self.directory / "documents"
@@ -342,14 +430,48 @@ class Workspace:
             connection.commit()
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path)
+        ensure_no_symlink(self.directory)
+        directory = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
+            for name in (
+                self.path.name,
+                f"{self.path.name}-wal",
+                f"{self.path.name}-shm",
+                f"{self.path.name}-journal",
+            ):
+                try:
+                    metadata = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid():
+                    raise OSError("refusing unsafe workspace database file")
+            database = os.open(
+                self.path.name,
+                os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW,
+                0o600,
+                dir_fd=directory,
+            )
+            os.fchmod(database, 0o600)
+            guarded = os.fstat(database)
+            connection = sqlite3.connect(self.path)
+            opened = os.stat(self.path.name, dir_fd=directory, follow_symlinks=False)
+            if (guarded.st_dev, guarded.st_ino) != (opened.st_dev, opened.st_ino):
+                connection.close()
+                raise OSError("workspace database changed while it was being opened")
+            os.close(database)
             connection.execute("PRAGMA foreign_keys=ON")
-            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA journal_mode=DELETE")
+            connection.execute("PRAGMA synchronous=FULL")
             self._protect_database_files()
         except Exception:
-            connection.close()
+            if "database" in locals():
+                with suppress(OSError):
+                    os.close(database)
+            if "connection" in locals():
+                connection.close()
             raise
+        finally:
+            os.close(directory)
         return connection
 
     def _protect_workspace_files(self) -> None:
@@ -376,4 +498,4 @@ class Workspace:
             self.path.with_name(f"{self.path.name}-shm"),
         ):
             if path.exists():
-                os.chmod(path, 0o600)
+                os.chmod(path, 0o600, follow_symlinks=False)

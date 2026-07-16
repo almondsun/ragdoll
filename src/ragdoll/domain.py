@@ -53,6 +53,12 @@ class ResearchBrief(BaseModel):
     reproducibility_requirements: list[str] = Field(default_factory=list)
     desired_paper_count: int = Field(default=12, ge=3, le=50)
 
+    @model_validator(mode="after")
+    def dates_are_ordered(self) -> ResearchBrief:
+        if self.date_from and self.date_to and self.date_from > self.date_to:
+            raise ValueError("date_from must be on or before date_to")
+        return self
+
 
 class QueryFamily(BaseModel):
     axis: str = Field(min_length=1)
@@ -67,8 +73,35 @@ class ResearchPlan(BaseModel):
     inclusion_criteria: list[str] = Field(default_factory=list)
     exclusion_criteria: list[str] = Field(default_factory=list)
     query_families: list[QueryFamily] = Field(min_length=1, max_length=12)
-    sources: list[str] = Field(default_factory=lambda: ["openalex", "arxiv"])
+    sources: list[str] = Field(default_factory=lambda: ["openalex", "arxiv"], min_length=1)
+    metadata_sources: list[str] = Field(default_factory=lambda: ["crossref"])
     ranking_priorities: list[str] = Field(default_factory=list)
+
+    @field_validator("sources")
+    @classmethod
+    def discovery_sources_are_supported(cls, values: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(value.casefold().strip() for value in values))
+        unsupported = sorted(set(normalized) - {"openalex", "arxiv"})
+        if unsupported:
+            raise ValueError(f"unsupported discovery sources: {', '.join(unsupported)}")
+        return normalized
+
+    @field_validator("metadata_sources")
+    @classmethod
+    def metadata_sources_are_supported(cls, values: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(value.casefold().strip() for value in values))
+        unsupported = sorted(set(normalized) - {"crossref"})
+        if unsupported:
+            raise ValueError(f"unsupported metadata sources: {', '.join(unsupported)}")
+        return normalized
+
+
+class RetrievalHit(BaseModel):
+    source: str = Field(min_length=1)
+    source_id: str = Field(min_length=1)
+    query: str = Field(min_length=1)
+    rank: int = Field(ge=1)
+    retrieved_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class FullTextCandidate(BaseModel):
@@ -94,6 +127,8 @@ class Paper(BaseModel):
     sources: set[str] = Field(default_factory=set)
     queries: set[str] = Field(default_factory=set)
     source_ranks: list[int] = Field(default_factory=list)
+    retrieval_hits: list[RetrievalHit] = Field(default_factory=list)
+    provenance_complete: bool = False
     fulltext_candidates: list[FullTextCandidate] = Field(default_factory=list)
     retrieved_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -136,6 +171,19 @@ class InvestigationStatus(StrEnum):
     SEARCHING = "searching"
     REVIEW = "review"
     COMPLETE = "complete"
+
+
+class ApprovalKind(StrEnum):
+    PLAN = "plan"
+    EVIDENCE = "evidence"
+
+
+class ApprovalRecord(BaseModel):
+    investigation_id: str
+    kind: ApprovalKind
+    fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    approved_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    details: dict[str, str] = Field(default_factory=dict)
 
 
 class DossierStatus(StrEnum):
@@ -189,6 +237,7 @@ class EvidenceDocument(BaseModel):
     acquired_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     relative_path: str | None = None
     error: str | None = None
+    staged_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
 class EvidenceChunk(BaseModel):
@@ -217,6 +266,10 @@ class ResearchDossier(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     evidence_summary: str = Field(min_length=1)
     sections: list[DossierSection] = Field(min_length=1)
+    staged_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    evidence_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    acquisition_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    acquired_paper_ids: list[str] = Field(default_factory=list)
 
 
 class GroundedAnswer(BaseModel):
@@ -224,6 +277,8 @@ class GroundedAnswer(BaseModel):
     claims: list[GroundedClaim] = Field(default_factory=list)
     insufficient_evidence: bool = False
     explanation: str = Field(min_length=1, max_length=800)
+    staged_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    evidence_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
     def insufficiency_is_explicit(self) -> GroundedAnswer:

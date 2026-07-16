@@ -6,6 +6,7 @@ import json
 
 from pydantic import BaseModel, Field
 
+from .contracts import evidence_fingerprint, staged_fingerprint
 from .domain import (
     DossierSection,
     EvidenceChunk,
@@ -46,13 +47,37 @@ class Synthesizer:
         self.provider = provider
         self.workspace = workspace
 
-    def generate(self, investigation: Investigation) -> ResearchDossier:
+    def generate(
+        self,
+        investigation: Investigation,
+        acquisition_fingerprint: str | None = None,
+        acquired_ids: set[str] | None = None,
+    ) -> ResearchDossier:
         if investigation.brief is None or investigation.plan is None:
             raise ValueError("a research brief and plan are required for dossier synthesis")
         existing = self.workspace.load_dossier(investigation.id)
-        sections = list(existing.sections) if existing else []
-        completed = {section.title for section in sections}
         documents = self.workspace.list_documents(investigation.id)
+        staged = staged_fingerprint(investigation)
+        staged_ids = acquired_ids or {item.paper.id for item in investigation.papers if item.staged}
+        evidence_digest = evidence_fingerprint(
+            investigation, documents, staged_ids, acquisition_fingerprint
+        )
+        current = bool(
+            existing
+            and existing.staged_fingerprint == staged
+            and existing.evidence_fingerprint == evidence_digest
+        )
+        sections = list(existing.sections) if current and existing else []
+        completed = {section.title for section in sections}
+        documents = [
+            document
+            for document in documents
+            if document.paper_id in staged_ids
+            and (
+                acquisition_fingerprint is None
+                or document.staged_fingerprint == acquisition_fingerprint
+            )
+        ]
         levels: dict[str, int] = {}
         for document in documents:
             levels[document.evidence_level] = levels.get(document.evidence_level, 0) + 1
@@ -69,7 +94,11 @@ class Synthesizer:
                 ]
             )
             chunks = self.workspace.search_chunks(
-                investigation.id, query, limit=6, per_paper_limit=2
+                investigation.id,
+                query,
+                limit=6,
+                per_paper_limit=2,
+                paper_ids=staged_ids,
             )
             claims = self._section_claims(title, purpose, investigation, chunks)
             sections.append(DossierSection(title=title, claims=claims))
@@ -80,28 +109,50 @@ class Synthesizer:
                     title=f"{investigation.plan.title}: evidence-grounded dossier",
                     evidence_summary=summary or "No usable evidence was indexed.",
                     sections=sections,
+                    staged_fingerprint=staged,
+                    evidence_fingerprint=evidence_digest,
+                    acquisition_fingerprint=acquisition_fingerprint,
+                    acquired_paper_ids=sorted(staged_ids),
                 ),
             )
         dossier = ResearchDossier(
             title=f"{investigation.plan.title}: evidence-grounded dossier",
             evidence_summary=summary or "No usable evidence was indexed.",
             sections=sections,
+            staged_fingerprint=staged,
+            evidence_fingerprint=evidence_digest,
+            acquisition_fingerprint=acquisition_fingerprint,
+            acquired_paper_ids=sorted(staged_ids),
         )
         self.workspace.save_dossier(investigation.id, dossier)
         return dossier
 
-    def answer(self, investigation: Investigation, question: str) -> GroundedAnswer:
-        chunks = self.workspace.search_chunks(investigation.id, question)
+    def answer(
+        self,
+        investigation: Investigation,
+        question: str,
+        acquisition_fingerprint: str | None = None,
+        acquired_ids: set[str] | None = None,
+    ) -> GroundedAnswer:
+        staged_ids = acquired_ids or {item.paper.id for item in investigation.papers if item.staged}
+        documents = self.workspace.list_documents(investigation.id)
+        staged = staged_fingerprint(investigation)
+        evidence_digest = evidence_fingerprint(
+            investigation, documents, staged_ids, acquisition_fingerprint
+        )
+        chunks = self.workspace.search_chunks(investigation.id, question, paper_ids=staged_ids)
         if not chunks:
             insufficient = GroundedAnswer(
                 question=question,
                 insufficient_evidence=True,
                 explanation="The indexed corpus contains no passages matching this question.",
+                staged_fingerprint=staged,
+                evidence_fingerprint=evidence_digest,
             )
             self.workspace.save_answer(investigation.id, insufficient)
             return insufficient
-        evidence = _evidence_prompt(chunks)
-        prompt = f"Question: {question}\n\nEvidence:\n{evidence}"
+        evidence_prompt = _evidence_prompt(chunks)
+        prompt = f"Question: {question}\n\nEvidence:\n{evidence_prompt}"
         last_error: ValueError | None = None
         answer: GroundedAnswer | None = None
         for _attempt in range(2):
@@ -125,6 +176,8 @@ class Synthesizer:
                         explanation=(
                             "The retrieved passages do not support an answer to this question."
                         ),
+                        staged_fingerprint=staged,
+                        evidence_fingerprint=evidence_digest,
                     )
                     break
                 _validate_citations(draft.claims, chunks)
@@ -133,6 +186,8 @@ class Synthesizer:
                     claims=draft.claims,
                     insufficient_evidence=False,
                     explanation="Answer limited to the cited indexed passages.",
+                    staged_fingerprint=staged,
+                    evidence_fingerprint=evidence_digest,
                 )
                 break
             except ValueError as error:

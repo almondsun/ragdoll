@@ -23,9 +23,10 @@ def _apply_resource_limits(memory_mib: int, cpu_seconds: int, output_bytes: int)
 
 def extract(
     input_path: Path,
-    output_path: Path,
+    output_path: Path | None,
     max_pages: int,
     max_output_bytes: int | None = None,
+    output_fd: int | None = None,
 ) -> None:
     reader = PdfReader(input_path, strict=True)
     if reader.is_encrypted:
@@ -39,21 +40,39 @@ def extract(
     payload = json.dumps({"pages": pages})
     if max_output_bytes is not None and len(payload.encode("utf-8")) > max_output_bytes:
         raise ValueError("PDF extraction exceeds the output byte limit")
-    output_path.write_text(payload, encoding="utf-8")
+    if output_fd is not None:
+        with os.fdopen(output_fd, "w", encoding="utf-8", closefd=False) as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+    elif output_path is not None:
+        output_path.write_text(payload, encoding="utf-8")
+    else:
+        raise ValueError("an extractor output destination is required")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("input", type=Path)
-    parser.add_argument("output", type=Path)
+    parser.add_argument("output", type=Path, nargs="?")
+    parser.add_argument("--output-fd", type=int)
     parser.add_argument("--max-pages", type=int, required=True)
     parser.add_argument("--max-memory-mib", type=int, required=True)
     parser.add_argument("--max-cpu-seconds", type=int, required=True)
     parser.add_argument("--max-output-bytes", type=int, required=True)
     args = parser.parse_args()
     _apply_resource_limits(args.max_memory_mib, args.max_cpu_seconds, args.max_output_bytes)
-    extract(args.input, args.output, args.max_pages, args.max_output_bytes)
-    os.chmod(args.output, 0o600)
+    if (args.output is None) == (args.output_fd is None):
+        parser.error("provide exactly one output path or --output-fd")
+    extract(
+        args.input,
+        args.output,
+        args.max_pages,
+        args.max_output_bytes,
+        output_fd=args.output_fd,
+    )
+    if args.output is not None:
+        os.chmod(args.output, 0o600)
 
 
 if __name__ == "__main__":

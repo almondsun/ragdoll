@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from ragdoll.config import Settings
-from ragdoll.domain import RelevanceBatch, RelevanceJudgment
+from ragdoll.domain import DossierStatus, RelevanceBatch, RelevanceJudgment
 from ragdoll.providers import OllamaProvider, OpenAIProvider, ProviderError, make_provider
 from ragdoll.service import ResearchService
 from ragdoll.sources import ScholarlySource
@@ -64,6 +64,18 @@ def test_ollama_failure_and_unknown_provider(brief) -> None:
         provider.structured(instructions="", prompt="", response_model=type(brief))
     with pytest.raises(ProviderError, match="unsupported"):
         make_provider(Settings(provider="other"))
+
+
+def test_default_ollama_client_ignores_environment_proxies(monkeypatch) -> None:
+    options = {}
+
+    class Client:
+        def __init__(self, **kwargs) -> None:
+            options.update(kwargs)
+
+    monkeypatch.setattr("ragdoll.providers.httpx.Client", Client)
+    OllamaProvider(Settings(provider="ollama"))
+    assert options["trust_env"] is False
 
 
 def test_openai_structured_success_and_failures(brief) -> None:
@@ -123,10 +135,16 @@ def test_service_executes_and_persists(tmp_path: Path, investigation, papers, mo
         arxiv=StaticSource([]),
         crossref=NoopCrossref(),
     )
-    result, warnings = service.execute(investigation.model_copy(update={"papers": []}))
+    approved = investigation.model_copy(
+        update={"papers": [], "dossier_status": DossierStatus.READY}
+    )
+    service.workspace.save(approved)
+    service.approve_plan(approved)
+    result, warnings = service.execute(approved)
     assert not warnings
     assert len(result.papers) == 2
     assert result.status == "review"
+    assert result.dossier_status == DossierStatus.NOT_STARTED
     assert service.workspace.latest() == result
     updated = service.set_staged(result, result.papers[1].paper.id, True)
     assert updated.papers[1].staged
@@ -140,3 +158,53 @@ def test_service_requires_approved_plan(tmp_path: Path, investigation) -> None:
     service = ResearchService(tmp_path, Settings(), FakeProvider([]))
     with pytest.raises(ValueError, match="approved"):
         service.execute(investigation.model_copy(update={"brief": None, "plan": None}))
+    service.workspace.save(investigation)
+    with pytest.raises(ValueError, match="explicitly approved"):
+        service.execute(investigation)
+
+
+def test_plan_revision_invalidates_approval(tmp_path: Path, investigation) -> None:
+    from ragdoll.providers import FakeProvider
+
+    service = ResearchService(tmp_path, Settings(), FakeProvider([]))
+    service.workspace.save(investigation)
+    service.approve_plan(investigation)
+    revised = investigation.model_copy(
+        update={"plan": investigation.plan.model_copy(update={"title": "Revised"})}
+    )
+    with pytest.raises(ValueError, match="explicitly approved"):
+        service.execute(revised)
+
+
+def test_staging_invalidates_dossier_and_requires_new_consent(
+    tmp_path: Path, investigation
+) -> None:
+    from ragdoll.domain import ResearchDossier
+    from ragdoll.providers import FakeProvider
+
+    service = ResearchService(tmp_path, Settings(), FakeProvider([]))
+    service.workspace.save(investigation)
+    service.approve_evidence(investigation)
+    service.workspace.save_dossier(
+        investigation.id,
+        ResearchDossier(
+            title="Old",
+            evidence_summary="old",
+            sections=[{"title": "Summary", "claims": []}],
+        ),
+    )
+    updated = service.set_staged(investigation, investigation.papers[1].paper.id, True)
+    assert service.workspace.load_dossier(investigation.id) is None
+    with pytest.raises(ValueError, match="explicitly approved"):
+        service.build_dossier(updated)
+
+
+def test_evidence_consent_is_bound_to_acquisition_limit(tmp_path: Path, investigation) -> None:
+    from ragdoll.providers import FakeProvider
+
+    first = ResearchService(tmp_path, Settings(dossier_paper_limit=1), FakeProvider([]))
+    first.workspace.save(investigation)
+    first.approve_evidence(investigation)
+    changed = ResearchService(tmp_path, Settings(dossier_paper_limit=2), FakeProvider([]))
+    with pytest.raises(ValueError, match="explicitly approved"):
+        changed.build_dossier(investigation)

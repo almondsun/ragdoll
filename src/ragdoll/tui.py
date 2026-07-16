@@ -40,6 +40,7 @@ from .domain import (
     Investigation,
     InvestigationStatus,
     RankedPaper,
+    ResearchBrief,
     ResearchDossier,
     ResearchPlan,
 )
@@ -250,16 +251,16 @@ class PlanReviewScreen(ModalScreen[str]):
         Binding("escape", "quit", "Save and quit"),
     ]
 
-    def __init__(self, plan: ResearchPlan, objective: str) -> None:
+    def __init__(self, plan: ResearchPlan, brief: ResearchBrief) -> None:
         super().__init__()
         self.plan = plan
-        self.objective = objective
+        self.brief = brief
 
     def compose(self) -> ComposeResult:
         with Container(classes="dialog plan-dialog"):
             yield Label("Review the research plan", classes="dialog-title")
             yield VerticalScroll(
-                Markdown(plan_markdown(self.plan, self.objective)), classes="dialog-body"
+                Markdown(plan_markdown(self.plan, self.brief)), classes="dialog-body"
             )
             yield Input(placeholder="Optional revision request", id="plan-revision")
             with Horizontal(classes="dialog-actions"):
@@ -511,6 +512,20 @@ class RagdollApp(App[Investigation | None]):
     async def _bootstrap(self) -> None:
         try:
             await self._show_splash()
+            details = self.service.inference_details()
+            await self.add_card(
+                "Inference destination",
+                (
+                    f"{details['provider']} · {details['model']} · "
+                    f"{details['endpoint']} · {details['transport']}"
+                ),
+                (
+                    "Research topics, clarification answers, briefs/plans, candidate titles and "
+                    "abstracts are sent for planning and ranking. Evidence passages are sent only "
+                    "after the separate dossier confirmation."
+                ),
+                "warning" if details["transport"] == "remote" else "system",
+            )
             if self.investigation is not None:
                 await self._resume_flow()
             elif self.initial_topic:
@@ -693,13 +708,14 @@ class RagdollApp(App[Investigation | None]):
         assert self.investigation.brief is not None and self.investigation.plan is not None
         while True:
             plan = self.investigation.plan
-            objective = self.investigation.brief.objective
-            action = await self.push_screen_wait(PlanReviewScreen(plan, objective))
+            brief = self.investigation.brief
+            action = await self.push_screen_wait(PlanReviewScreen(plan, brief))
             if action == "approve":
+                await asyncio.to_thread(self.service.approve_plan, self.investigation)
                 await self.add_card(
                     "Research plan approved",
                     f"{plan.title} · {len(plan.query_families)} query families",
-                    plan_markdown(plan, objective),
+                    plan_markdown(plan, brief),
                     "success",
                 )
                 await self._execute_search("Searching and ranking scholarly works…")
@@ -860,9 +876,9 @@ class RagdollApp(App[Investigation | None]):
                 "Plan unavailable", "This investigation has no plan yet.", tone="warning"
             )
             return
-        objective = self.investigation.brief.objective if self.investigation.brief else ""
+        brief = self.investigation.brief
         self.push_screen(
-            DetailScreen("Research plan", plan_markdown(self.investigation.plan, objective))
+            DetailScreen("Research plan", plan_markdown(self.investigation.plan, brief))
         )
 
     async def _show_papers(self) -> None:
@@ -939,7 +955,7 @@ class RagdollApp(App[Investigation | None]):
                 directory / f"reading-list.{suffix}",
                 format_name,
             )
-        dossier = self.service.workspace.load_dossier(self.investigation.id)
+        dossier = self.service.current_dossier(self.investigation)
         if dossier:
             chunk_ids = [
                 item
@@ -994,7 +1010,7 @@ class RagdollApp(App[Investigation | None]):
 
     async def _dossier(self, argument: str) -> None:
         assert self.investigation is not None
-        existing = self.service.workspace.load_dossier(self.investigation.id)
+        existing = self.service.current_dossier(self.investigation)
         command, _, requested = argument.partition(" ")
         if existing and command.casefold() == "refresh":
             await self._refresh_dossier(existing, requested.strip() or "Open questions")
@@ -1032,12 +1048,10 @@ class RagdollApp(App[Investigation | None]):
         self.investigation = await asyncio.to_thread(
             self.service.mark_dossier_awaiting_approval, self.investigation
         )
-        remote = self.settings.provider != "ollama"
+        details = self.service.inference_details()
         data_effect = (
-            f"Selected evidence passages will be sent to **{self.settings.provider}** "
-            "for synthesis."
-            if remote
-            else "Synthesis remains local in Ollama."
+            f"Selected evidence passages will be sent to **{details['provider']}** model "
+            f"`{details['model']}` at `{details['endpoint']}` ({details['transport']})."
         )
         confirmed = await self.push_screen_wait(
             ConfirmScreen(
@@ -1048,6 +1062,7 @@ class RagdollApp(App[Investigation | None]):
             )
         )
         if confirmed:
+            await asyncio.to_thread(self.service.approve_evidence, self.investigation)
             await self._build_dossier()
         else:
             await self.add_card("Dossier cancelled", "No documents were downloaded.")
@@ -1164,11 +1179,21 @@ class RagdollApp(App[Investigation | None]):
             self.push_screen(DetailScreen("RAGdoll help", help_markdown()))
 
 
-def plan_markdown(plan: ResearchPlan, objective: str) -> str:
+def plan_markdown(plan: ResearchPlan, brief: ResearchBrief | str | None) -> str:
     axes = "\n".join(f"- {axis}" for axis in plan.investigation_axes)
     queries = "\n".join(f"- `{query.query}` — {query.rationale}" for query in plan.query_families)
+    discovery = ", ".join(plan.sources)
+    enrichment = ", ".join(plan.metadata_sources) or "none"
+    objective = brief.objective if isinstance(brief, ResearchBrief) else (brief or "")
+    if isinstance(brief, ResearchBrief):
+        date_range = f"{brief.date_from or 'unbounded'} to {brief.date_to or 'unbounded'}"
+    else:
+        date_range = "unbounded"
     return (
-        f"# {plan.title}\n\n**Objective:** {objective}\n\n## Axes\n{axes}\n\n## Queries\n{queries}"
+        f"# {plan.title}\n\n**Objective:** {objective}\n\n"
+        f"**Date range:** {date_range}  \n**Discovery sources:** {discovery}  \n"
+        f"**Metadata enrichment:** {enrichment}\n\n"
+        f"## Axes\n{axes}\n\n## Queries\n{queries}"
     )
 
 

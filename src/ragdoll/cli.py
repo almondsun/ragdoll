@@ -14,6 +14,7 @@ from rich.table import Table
 
 from . import __version__
 from .config import load_settings
+from .contracts import evidence_fingerprint, staged_fingerprint
 from .export import export_dossier, export_investigation
 from .interactive import InteractiveResearch
 from .providers import ProviderError, make_provider
@@ -43,6 +44,10 @@ def main(
         str | None, typer.Option("--topic", "-t", help="Optional initial research topic")
     ] = None,
     provider: Annotated[str | None, typer.Option(help="openai or ollama")] = None,
+    allow_remote_ollama: Annotated[
+        bool,
+        typer.Option(help="Allow research prompts and evidence to use remote Ollama"),
+    ] = False,
     no_animation: Annotated[bool, typer.Option("--no-animation")] = False,
     version: Annotated[bool, typer.Option("--version", is_eager=True)] = False,
 ) -> None:
@@ -52,7 +57,12 @@ def main(
     if ctx.invoked_subcommand is not None:
         return
     _require_interactive_tty()
-    settings = load_settings(_root(), provider=provider, animate=not no_animation)
+    settings = load_settings(
+        _root(),
+        provider=provider,
+        animate=not no_animation,
+        allow_remote_ollama=True if allow_remote_ollama else None,
+    )
     try:
         InteractiveResearch(_root(), settings, make_provider(settings), console).start(topic)
     except (ProviderError, ValueError) as error:
@@ -74,17 +84,25 @@ def init() -> None:
 def resume_command(
     investigation_id: Annotated[str | None, typer.Argument()] = None,
     provider: Annotated[str | None, typer.Option()] = None,
+    allow_remote_ollama: Annotated[
+        bool,
+        typer.Option(help="Allow research prompts and evidence to use remote Ollama"),
+    ] = False,
 ) -> None:
     """Resume the latest or selected investigation."""
     _require_interactive_tty()
     workspace = Workspace(_root())
     try:
         investigation = workspace.load(investigation_id) if investigation_id else workspace.latest()
-        settings = load_settings(_root(), provider=provider)
+        settings = load_settings(
+            _root(),
+            provider=provider,
+            allow_remote_ollama=True if allow_remote_ollama else None,
+        )
         InteractiveResearch(_root(), settings, make_provider(settings), console).resume(
             investigation
         )
-    except (KeyError, ProviderError) as error:
+    except (KeyError, ProviderError, ValueError) as error:
         console.print(f"[red]Cannot resume:[/red] {error}")
         raise typer.Exit(2) from error
 
@@ -136,6 +154,19 @@ def export_command(
         dossier = workspace.load_dossier(investigation_id)
         if dossier is None:
             raise typer.BadParameter("this investigation has no dossier")
+        documents = workspace.list_documents(investigation_id)
+        if (
+            dossier.staged_fingerprint != staged_fingerprint(investigation)
+            or dossier.acquisition_fingerprint is None
+            or dossier.evidence_fingerprint
+            != evidence_fingerprint(
+                investigation,
+                documents,
+                set(dossier.acquired_paper_ids),
+                dossier.acquisition_fingerprint,
+            )
+        ):
+            raise typer.BadParameter("this investigation's dossier is stale; rebuild it first")
         chunk_ids = [
             item
             for section in dossier.sections
@@ -165,9 +196,10 @@ def doctor() -> None:
             "OPENAI_API_KEY: set" if os.getenv("OPENAI_API_KEY") else "OPENAI_API_KEY: missing"
         )
     else:
-        console.print(f"Ollama: {settings.ollama_url} ({settings.ollama_model})")
+        transport = "local" if settings.ollama_is_local else "remote (explicitly allowed)"
+        console.print(f"Ollama: {settings.ollama_url} ({settings.ollama_model}; {transport})")
         try:
-            response = httpx.get(f"{settings.ollama_url}/api/tags", timeout=3)
+            response = httpx.get(f"{settings.ollama_url}/api/tags", timeout=3, trust_env=False)
             response.raise_for_status()
             models = {
                 model.get("name", "").removesuffix(":latest")

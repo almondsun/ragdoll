@@ -18,35 +18,54 @@ from .sources import normalize_title
 
 
 def deduplicate(papers: list[Paper]) -> list[Paper]:
-    groups: dict[str, Paper] = {}
+    groups: list[tuple[set[str], Paper]] = []
     for paper in papers:
-        key = _identity(paper)
-        existing = groups.get(key)
-        if existing is None:
-            groups[key] = paper
+        aliases = _aliases(paper)
+        matches = [index for index, (known, _paper) in enumerate(groups) if known & aliases]
+        if not matches:
+            groups.append((aliases, paper))
             continue
-        abstract = existing.abstract or paper.abstract
-        candidates = {candidate.url: candidate for candidate in existing.fulltext_candidates}
-        candidates.update({candidate.url: candidate for candidate in paper.fulltext_candidates})
-        groups[key] = existing.model_copy(
-            update={
-                "abstract": abstract,
-                "doi": existing.doi or paper.doi,
-                "arxiv_id": existing.arxiv_id or paper.arxiv_id,
-                "url": existing.url or paper.url,
-                "venue": existing.venue or paper.venue,
-                "sources": existing.sources | paper.sources,
-                "queries": existing.queries | paper.queries,
-                "source_ranks": existing.source_ranks + paper.source_ranks,
-                "cited_by_count": max(existing.cited_by_count, paper.cited_by_count),
-                "fulltext_candidates": list(candidates.values()),
-            }
-        )
-    return list(groups.values())
+        first = matches[0]
+        known, existing = groups[first]
+        for index in reversed(matches[1:]):
+            other_aliases, other = groups.pop(index)
+            known |= other_aliases
+            existing = _merge(existing, other)
+        groups[first] = (known | aliases, _merge(existing, paper))
+    return [paper for _aliases, paper in groups]
+
+
+def _merge(existing: Paper, paper: Paper) -> Paper:
+    abstract = existing.abstract or paper.abstract
+    candidates = {candidate.url: candidate for candidate in existing.fulltext_candidates}
+    candidates.update({candidate.url: candidate for candidate in paper.fulltext_candidates})
+    hits = {
+        (hit.source, hit.source_id, hit.query, hit.rank, hit.retrieved_at): hit
+        for hit in [*existing.retrieval_hits, *paper.retrieval_hits]
+    }
+    return existing.model_copy(
+        update={
+            "abstract": abstract,
+            "doi": existing.doi or paper.doi,
+            "arxiv_id": existing.arxiv_id or paper.arxiv_id,
+            "url": existing.url or paper.url,
+            "venue": existing.venue or paper.venue,
+            "sources": existing.sources | paper.sources,
+            "queries": existing.queries | paper.queries,
+            "source_ranks": existing.source_ranks + paper.source_ranks,
+            "retrieval_hits": list(hits.values()),
+            "provenance_complete": (
+                existing.provenance_complete and paper.provenance_complete and bool(hits)
+            ),
+            "cited_by_count": max(existing.cited_by_count, paper.cited_by_count),
+            "fulltext_candidates": list(candidates.values()),
+        }
+    )
 
 
 def reciprocal_rank(paper: Paper, constant: int = 60) -> float:
-    return sum(1 / (constant + rank) for rank in paper.source_ranks)
+    ranks = [hit.rank for hit in paper.retrieval_hits] or paper.source_ranks
+    return sum(1 / (constant + rank) for rank in ranks)
 
 
 def rerank(
@@ -140,6 +159,8 @@ def stage_diverse(ranked: list[RankedPaper], axes: list[str], count: int) -> lis
         for axis in item.axis_coverage:
             by_axis[axis.casefold()].append(item)
     for axis in axes:
+        if len(selected) >= count:
+            break
         candidates = by_axis.get(axis.casefold(), [])
         if candidates:
             selected.add(candidates[0].paper.id)
@@ -150,10 +171,12 @@ def stage_diverse(ranked: list[RankedPaper], axes: list[str], count: int) -> lis
     return [item.model_copy(update={"staged": item.paper.id in selected}) for item in ranked]
 
 
-def _identity(paper: Paper) -> str:
+def _aliases(paper: Paper) -> set[str]:
+    aliases: set[str] = set()
     if paper.doi:
-        return f"doi:{paper.doi.casefold()}"
+        aliases.add(f"doi:{paper.doi.casefold()}")
     if paper.arxiv_id:
-        return f"arxiv:{paper.arxiv_id.split('v', 1)[0].casefold()}"
-    authors = paper.authors[0].casefold() if paper.authors else ""
-    return f"title:{normalize_title(paper.title)}:{paper.year}:{authors}"
+        aliases.add(f"arxiv:{paper.arxiv_id.split('v', 1)[0].casefold()}")
+    author = normalize_title(paper.authors[0]) if paper.authors else ""
+    aliases.add(f"title:{normalize_title(paper.title)}:{author}")
+    return aliases

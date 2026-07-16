@@ -2,24 +2,23 @@
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
 from .domain import EvidenceChunk, GroundedAnswer, Investigation, RankedPaper, ResearchDossier
+from .safe_io import atomic_write
 
 
 def export_investigation(investigation: Investigation, output: Path, format: str) -> Path:
-    output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if format == "json":
-        output.write_text(investigation.model_dump_json(indent=2), encoding="utf-8")
+        content = investigation.model_dump_json(indent=2)
     elif format == "markdown":
-        output.write_text(_markdown(investigation), encoding="utf-8")
+        content = _markdown(investigation)
     elif format == "bibtex":
-        output.write_text(_bibtex(investigation.papers), encoding="utf-8")
+        content = _bibtex(investigation.papers)
     else:
         raise ValueError(f"unsupported export format: {format}")
-    os.chmod(output, 0o600)
+    atomic_write(output, content.encode())
     return output
 
 
@@ -100,7 +99,6 @@ def export_dossier(
     output: Path,
     format: str,
 ) -> Path:
-    output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if format == "json":
         payload = {
             "dossier": dossier.model_dump(mode="json"),
@@ -110,12 +108,12 @@ def export_dossier(
         }
         import json
 
-        output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        content = json.dumps(payload, indent=2)
     elif format == "markdown":
-        output.write_text(render_dossier(dossier, investigation, chunks), encoding="utf-8")
+        content = render_dossier(dossier, investigation, chunks)
     else:
         raise ValueError(f"unsupported dossier format: {format}")
-    os.chmod(output, 0o600)
+    atomic_write(output, content.encode())
     return output
 
 

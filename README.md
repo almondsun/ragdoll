@@ -71,8 +71,10 @@ uv run ragdoll --provider ollama
 ```
 
 OpenAI uses the Responses API. The default fast and quality models are configurable through
-`RAGDOLL_OPENAI_FAST_MODEL` and `RAGDOLL_OPENAI_QUALITY_MODEL`. Ollama defaults to `qwen3:4b` and
-can be changed with `RAGDOLL_OLLAMA_MODEL`.
+`RAGDOLL_OPENAI_FAST_MODEL` and `RAGDOLL_OPENAI_QUALITY_MODEL`. Ollama defaults to loopback
+`http://127.0.0.1:11434` with `qwen3:4b`. A remote HTTPS endpoint requires explicit user opt-in
+through `RAGDOLL_ALLOW_REMOTE_OLLAMA=true` or `--allow-remote-ollama`; project-local configuration
+cannot enable or redirect it. The evidence consent dialog names the actual endpoint and model.
 
 ## What is explainable
 
@@ -106,6 +108,11 @@ Read the [architecture](docs/architecture.md), [planning contract](docs/planning
 [privacy model](docs/privacy.md) before extending the workflow.
 
 ## Status
+
+The unreleased v2.2 hardening branch binds approvals and derived outputs to canonical fingerprints,
+enforces approved source/date constraints, persists exact retrieval hits, and hardens local write
+and extraction boundaries. Release remains blocked until the checked-in three-arm benchmark has
+maintainer-adjudicated relevance labels and passes every documented gate.
 
 `v2.1.0` preserves the completed research contract and presents its interactive surface as a
 fullscreen, conversation-first terminal workspace with the continuously animated `3 x 2` M2 cat

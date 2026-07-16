@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from pydantic import ValidationError
 
@@ -125,3 +127,14 @@ def test_fake_provider_exhaustion() -> None:
     provider = FakeProvider([])
     with pytest.raises(ProviderError, match="empty"):
         provider.structured(instructions="", prompt="", response_model=ResearchPlan)
+
+
+def test_research_contract_rejects_reversed_dates_and_unknown_sources(brief, plan) -> None:
+    with pytest.raises(ValidationError, match="date_from"):
+        ResearchBrief.model_validate(
+            brief.model_dump() | {"date_from": date(2025, 1, 1), "date_to": date(2024, 1, 1)}
+        )
+    with pytest.raises(ValidationError, match="unsupported discovery"):
+        ResearchPlan.model_validate(plan.model_dump() | {"sources": ["semantic-scholar"]})
+    with pytest.raises(ValidationError, match="unsupported metadata"):
+        ResearchPlan.model_validate(plan.model_dump() | {"metadata_sources": ["google"]})

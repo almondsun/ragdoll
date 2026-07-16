@@ -29,9 +29,11 @@ event loop, and owns only focus, overlays, command dispatch, and presentation st
 selection dialogs, paper picker, confirmation boundaries, and detail viewer do not bypass domain or
 workspace validation.
 
-Workspaces live in `.ragdoll/`. SQLite schema v2 stores restorable investigation snapshots, an
+Workspaces live in `.ragdoll/`. SQLite schema v3 stores restorable investigation snapshots, an
 append-only event trail, evidence-document provenance, page-aware chunks, an FTS5 index, checkpointed
-dossier sections, and question history. Existing schema-v1 workspaces migrate transactionally.
+dossier sections, question history, and explicit plan/evidence approval records. Existing schema-v1
+and schema-v2 workspaces migrate transactionally; legacy derived outputs remain readable but stale
+until rebuilt under fingerprinted contracts.
 
 Network acquisition, PDF parsing, model inference, persistence, and terminal rendering remain
 separate boundaries. PDF extraction runs in an isolated Python subprocess with byte, page, and time
