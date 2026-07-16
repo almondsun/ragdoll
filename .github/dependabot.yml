@@ -8,6 +8,10 @@ updates:
       python-dependencies:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: textual
+        update-types:
+          - version-update:semver-major
   - package-ecosystem: github-actions
     directory: /
     schedule:
