@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -43,6 +44,9 @@ def test_ollama_structured_and_retry(brief) -> None:
         assert '"num_predict":2048' in payload
         if calls == 1:
             return httpx.Response(200, json={"message": {"content": "invalid"}})
+        messages = json.loads(payload)["messages"]
+        assert messages[-2] == {"role": "assistant", "content": "invalid"}
+        assert "failed schema validation" in messages[-1]["content"]
         return httpx.Response(200, json={"message": {"content": brief.model_dump_json()}})
 
     provider = OllamaProvider(
