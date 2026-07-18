@@ -1,25 +1,68 @@
 site_name: RAGdoll
+site_description: Explainable scholarly research from question to cited dossier.
 site_url: https://almondsun.github.io/ragdoll/
 repo_url: https://github.com/almondsun/ragdoll
+repo_name: almondsun/ragdoll
+edit_uri: edit/main/docs/
+exclude_docs: |
+  assets/OpenAI Build Week/copy/**
+  assets/OpenAI Build Week/production/**
+  assets/OpenAI Build Week/source/**
+  assets/OpenAI Build Week/video/*.mp4
+  assets/OpenAI Build Week/video/*.srt
 theme:
   name: material
   logo: assets/ragdoll-mascot.svg
   favicon: assets/ragdoll-mascot.png
+  features:
+    - content.action.edit
+    - content.code.copy
+    - navigation.footer
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
   palette:
-    primary: deep purple
-    accent: cyan
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Use light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/weather-night
+        name: Use dark mode
 nav:
   - Home: index.md
-  - Terminal experience: terminal-experience.md
-  - Planning contract: planning-contract.md
-  - Architecture: architecture.md
-  - Retrieval and ranking: retrieval-and-ranking.md
-  - Evidence and dossiers: evidence-and-dossiers.md
-  - Evaluation: evaluation.md
-  - v1 reference run: v1-reference-run.md
-  - Privacy: privacy.md
+  - Product:
+      - Terminal experience: terminal-experience.md
+      - Planning contract: planning-contract.md
+  - Research pipeline:
+      - Retrieval and ranking: retrieval-and-ranking.md
+      - Evidence and dossiers: evidence-and-dossiers.md
+  - Engineering:
+      - Architecture: architecture.md
+      - Privacy and trust: privacy.md
+  - Evaluation:
+      - Methodology: evaluation.md
+      - Acceptance reference run: v1-reference-run.md
+  - OpenAI Build Week: build-week.md
+extra_css:
+  - stylesheets/extra.css
 markdown_extensions:
   - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid

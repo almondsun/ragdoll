@@ -10,6 +10,8 @@
   destination, reject symlinked workspace/write paths, and bound parser settings and stderr capture.
 - Add a reproducible three-arm live benchmark, blinded maintainer adjudication worksheet, and
   fail-closed v2.2 release gates. The version remains unreleased until those gates pass.
+- Add a deterministic no-key judge demo, a documented end-to-end acceptance record, and the OpenAI
+  Build Week video, gallery, submission guide, and refreshed public documentation site.
 
 ## 2.1.0 — 2026-07-15
 

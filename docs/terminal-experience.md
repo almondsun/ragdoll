@@ -1,10 +1,10 @@
 # Terminal experience
 
-RAGdoll 2.1 is a fullscreen, conversation-first terminal application. It borrows proven interaction
+RAGdoll is a fullscreen, conversation-first terminal application. It borrows proven interaction
 patterns from the official Codex CLI, Claude Code, and GitHub Copilot CLI while retaining an
 independent research workflow and minimal M2 cat identity.
 
-![RAGdoll 2.1 welcome screen](assets/ragdoll-tui-welcome.svg)
+![RAGdoll welcome screen](assets/ragdoll-tui-welcome.svg)
 
 ## Screen contract
 

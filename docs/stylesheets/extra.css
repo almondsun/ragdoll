@@ -1,0 +1,72 @@
+:root {
+  --ragdoll-cyan: #56cfe1;
+  --ragdoll-violet: #9b5de5;
+  --ragdoll-coral: #ff6b6b;
+  --ragdoll-cream: #fff3c4;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #09131d;
+  --md-default-fg-color: #e8f2f7;
+  --md-primary-fg-color: #6f3fc7;
+  --md-accent-fg-color: var(--ragdoll-cyan);
+}
+
+.md-header {
+  background: linear-gradient(90deg, #6f3fc7, #385a96);
+}
+
+.ragdoll-hero {
+  margin-bottom: 2.5rem;
+  text-align: center;
+}
+
+.ragdoll-hero-image {
+  width: 100%;
+  border-radius: 0.75rem;
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 18%);
+}
+
+.ragdoll-hero > p:not(:first-child) {
+  max-width: 48rem;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.ragdoll-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0 2rem;
+}
+
+.ragdoll-grid > section,
+.ragdoll-grid > div {
+  padding: 0.25rem 1rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--ragdoll-cyan) 45%, transparent);
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--ragdoll-violet) 7%, transparent);
+}
+
+.ragdoll-grid h3 {
+  color: var(--ragdoll-violet);
+}
+
+[data-md-color-scheme="slate"] .ragdoll-grid h3 {
+  color: var(--ragdoll-cyan);
+}
+
+.md-typeset .md-button {
+  margin: 0.2rem;
+  border-radius: 2rem;
+}
+
+.md-typeset img {
+  border-radius: 0.55rem;
+}
+
+@media screen and (max-width: 52rem) {
+  .ragdoll-grid {
+    grid-template-columns: 1fr;
+  }
+}
