@@ -1,0 +1,7 @@
+01 — RAGdoll turns a research question into an explainable, cited literature dossier—from your terminal.
+02 — A keyboard-first workspace for planning searches, curating papers, inspecting evidence, and reading cited dossiers.
+03 — The model proposes; the researcher approves; RAGdoll preserves every query, source, score, decision, and cited passage.
+04 — Separate approvals for search, paper curation, full-text acquisition, and evidence inspection keep researchers in control.
+05 — Every cited claim links to the exact supplied passage, evidence level, source, and page locator.
+06 — Model reasoning stays behind Pydantic contracts; narrow adapters enforce retrieval, permissions, and storage.
+07 — Recorded run: 24 candidates, 6 curated papers, 307 evidence chunks, 7 dossier sections, and 23/25 claims supported.

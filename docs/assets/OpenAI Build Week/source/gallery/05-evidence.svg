@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1000" viewBox="0 0 1500 1000">
+  <rect width="1500" height="1000" fill="#0f141b"/>
+  <g font-family="JetBrains Mono, monospace">
+    <text x="80" y="105" fill="#fff3c4" font-size="58" font-weight="700">Claims you can inspect</text>
+    <text x="84" y="157" fill="#56cfe1" font-size="25">RAGdoll distinguishes metadata, abstracts, and full text—always.</text>
+
+    <rect x="80" y="230" width="585" height="640" rx="30" fill="#172a3a" stroke="#9b5de5" stroke-width="3"/>
+    <text x="125" y="295" fill="#aeb6c4" font-size="20">DOSSIER · EXACT CITATION</text>
+    <text x="125" y="365" fill="#fff3c4" font-size="26">Users frequently struggle to</text>
+    <text x="125" y="407" fill="#fff3c4" font-size="26">translate their creative ideas</text>
+    <text x="125" y="449" fill="#fff3c4" font-size="26">into precise video outputs.</text>
+    <rect x="125" y="500" width="380" height="56" rx="28" fill="#24364a"/>
+    <text x="152" y="537" fill="#56cfe1" font-size="18">[chunk-b97b8d69… · p.2]</text>
+    <text x="125" y="625" fill="#aeb6c4" font-size="19">Evidence level</text>
+    <text x="540" y="625" fill="#fff3c4" font-size="19" text-anchor="end">FULL TEXT</text>
+    <text x="125" y="680" fill="#aeb6c4" font-size="19">Source</text>
+    <text x="540" y="680" fill="#fff3c4" font-size="19" text-anchor="end">arXiv 2507.16869v3</text>
+    <text x="125" y="735" fill="#aeb6c4" font-size="19">Locator</text>
+    <text x="540" y="735" fill="#fff3c4" font-size="19" text-anchor="end">page 2, part 2</text>
+    <text x="125" y="820" fill="#ff6b6b" font-size="18">Citation integrity ≠ entailment proof</text>
+
+    <g transform="translate(760 230)">
+      <rect width="660" height="640" rx="30" fill="#17202b" stroke="#56cfe1" stroke-width="3"/>
+      <text x="50" y="68" fill="#56cfe1" font-size="20">SUPPLIED PASSAGE EXCERPT</text>
+      <rect x="48" y="105" width="564" height="320" rx="18" fill="#111923"/>
+      <text x="82" y="158" fill="#d8d7e0" font-size="20">“users frequently struggle to translate</text>
+      <text x="82" y="198" fill="#d8d7e0" font-size="20">their creative ideas into precise video</text>
+      <text x="82" y="238" fill="#d8d7e0" font-size="20">outputs... researchers have begun exploring</text>
+      <text x="82" y="278" fill="#d8d7e0" font-size="20">ways to incorporate control signals beyond</text>
+      <text x="82" y="318" fill="#d8d7e0" font-size="20">text, enabling more accurate and flexible</text>
+      <text x="82" y="358" fill="#d8d7e0" font-size="20">guidance in the video generation process.”</text>
+      <text x="50" y="500" fill="#aeb6c4" font-size="19">✓ cited ID appears in the saved dossier</text>
+      <text x="50" y="550" fill="#aeb6c4" font-size="19">✓ source + page locator are preserved</text>
+      <text x="50" y="600" fill="#aeb6c4" font-size="19">✓ unsupported questions fail closed</text>
+    </g>
+  </g>
+</svg>

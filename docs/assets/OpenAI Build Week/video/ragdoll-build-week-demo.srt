@@ -1,0 +1,167 @@
+1
+00:00:00,000 --> 00:00:03,477
+Research assistants can produce polished answers while hiding how
+
+2
+00:00:03,477 --> 00:00:06,954
+they searched, what they actually read, and which decisions
+
+3
+00:00:06,954 --> 00:00:10,431
+belonged to the researcher. RAGdoll was built to keep
+
+4
+00:00:10,431 --> 00:00:11,204
+those receipts.
+
+5
+00:00:11,254 --> 00:00:15,375
+This is the real RAGdoll terminal, resuming a documented
+
+6
+00:00:15,375 --> 00:00:19,495
+acceptance investigation about video generation models. The recorded run
+
+7
+00:00:19,495 --> 00:00:23,616
+was completed locally with Ollama and Qwen three, four
+
+8
+00:00:23,616 --> 00:00:27,736
+B. No OpenAI API call is simulated in this
+
+9
+00:00:27,736 --> 00:00:28,194
+recording.
+
+10
+00:00:28,244 --> 00:00:32,512
+RAGdoll turns an ambiguous question into a structured research
+
+11
+00:00:32,512 --> 00:00:36,780
+brief and an executable search plan. The researcher can
+
+12
+00:00:36,780 --> 00:00:41,048
+inspect every axis, query family, inclusion rule, and source
+
+13
+00:00:41,048 --> 00:00:44,368
+before approving discovery. Search never starts silently.
+
+14
+00:00:44,418 --> 00:00:48,245
+Approved queries run through scholarly source adapters. Results are
+
+15
+00:00:48,245 --> 00:00:52,072
+deduplicated and ranked with visible score components and reasons.
+
+16
+00:00:52,072 --> 00:00:55,899
+This run retrieved twenty four candidates, but the human
+
+17
+00:00:55,899 --> 00:00:59,726
+selected the six papers that entered the evidence workflow.
+
+18
+00:00:59,776 --> 00:01:04,069
+Paper selection and evidence acquisition are separate approvals. RAGdoll
+
+19
+00:01:04,069 --> 00:01:08,361
+records the source, retrieval state, evidence level, and page
+
+20
+00:01:08,361 --> 00:01:12,654
+count. Five papers supplied open full text and one
+
+21
+00:01:12,654 --> 00:01:15,516
+used an explicitly labeled abstract fallback.
+
+22
+00:01:15,566 --> 00:01:19,410
+The resulting dossier contains seven checkpointed sections and twenty
+
+23
+00:01:19,410 --> 00:01:23,254
+five cited claims. It states its evidence boundary instead
+
+24
+00:01:23,254 --> 00:01:27,098
+of claiming exhaustive coverage or novelty. Every accepted citation
+
+25
+00:01:27,098 --> 00:01:30,942
+identifier had to be present in the bounded evidence
+
+26
+00:01:30,942 --> 00:01:32,650
+supplied for that section.
+
+27
+00:01:32,700 --> 00:01:36,911
+A citation is not decorative. From any claim, the
+
+28
+00:01:36,911 --> 00:01:41,122
+researcher can inspect the exact indexed passage, paper identifier,
+
+29
+00:01:41,122 --> 00:01:45,333
+page locator, and evidence level. Unsupported questions fail closed
+
+30
+00:01:45,333 --> 00:01:48,608
+instead of inviting the model to guess.
+
+31
+00:01:48,658 --> 00:01:53,138
+Model output crosses Pydantic validation before entering domain logic,
+
+32
+00:01:53,138 --> 00:01:57,618
+while narrow adapters own retrieval, storage, and permissions. Codex
+
+33
+00:01:57,618 --> 00:02:02,099
+accelerated repository analysis, implementation, testing, and security review. RAGdoll
+
+34
+00:02:02,099 --> 00:02:06,579
+also contains a real Responses API adapter configured for
+
+35
+00:02:06,579 --> 00:02:11,059
+GPT five point six. It is contract tested, not
+
+36
+00:02:11,059 --> 00:02:14,046
+presented as live in this capture.
+
+37
+00:02:14,096 --> 00:02:18,083
+The acceptance run indexed three hundred seven page-aware chunks.
+
+38
+00:02:18,083 --> 00:02:22,070
+A manual passage audit found twenty three of twenty
+
+39
+00:02:22,070 --> 00:02:26,057
+five claims directly supported, preserving the two failures as
+
+40
+00:02:26,057 --> 00:02:30,044
+evidence that citation integrity is not automatic entailment. RAGdoll
+
+41
+00:02:30,044 --> 00:02:34,031
+helps researchers move faster without giving up judgment, provenance,
+
+42
+00:02:34,031 --> 00:02:37,132
+or the ability to check the receipts.

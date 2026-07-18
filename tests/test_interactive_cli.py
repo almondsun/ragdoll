@@ -18,6 +18,7 @@ from ragdoll.cli import app as cli_app
 from ragdoll.commands import COMMAND_NAMES, command_help, migration_hint, parse_command
 from ragdoll.config import Settings
 from ragdoll.contracts import evidence_fingerprint, inference_fingerprint, staged_fingerprint
+from ragdoll.demo import DEMO_INVESTIGATION_ID, seed_demo
 from ragdoll.domain import (
     ClarificationOption,
     ClarificationQuestion,
@@ -45,6 +46,7 @@ from ragdoll.mascot import (
 )
 from ragdoll.planning import InterviewTurn
 from ragdoll.providers import FakeProvider, ProviderError
+from ragdoll.service import ResearchService
 from ragdoll.storage import Workspace
 from ragdoll.tui import (
     ClarificationScreen,
@@ -242,6 +244,44 @@ async def test_resume_collection_commands_and_migration_hints(
         assert any(
             card.card_title == "Evidence not found" for card in application.query(TimelineCard)
         )
+
+
+@pytest.mark.asyncio
+async def test_offline_demo_is_inspectable_and_blocks_provider_work(tmp_path) -> None:
+    settings = Settings(provider="ollama", animate=False)
+    provider = FakeProvider([])
+    service = ResearchService(tmp_path, settings, provider)
+    investigation = seed_demo(service)
+    application = RagdollApp(
+        tmp_path,
+        settings,
+        provider,
+        investigation=investigation,
+        service=service,
+        demo_mode=True,
+    )
+
+    async with application.run_test(size=(120, 40)) as pilot:
+        await wait_for(pilot, lambda: application.query_one("#composer", TextArea).has_focus)
+        assert service.current_dossier(investigation) is not None
+        assert len(service.workspace.list_documents(DEMO_INVESTIGATION_ID)) == 3
+        assert any(card.card_title == "Offline sample" for card in application.query(TimelineCard))
+
+        await application._handle_submission("/dossier")
+        assert any(
+            card.card_title == "Research dossier" for card in application.query(TimelineCard)
+        )
+        await application._handle_submission("/evidence demo-chunk-1")
+        await application._handle_submission("/ask What changed?")
+        await application._handle_submission("/purge")
+        assert (
+            sum(
+                card.card_title == "Offline sample is read-only"
+                for card in application.query(TimelineCard)
+            )
+            == 2
+        )
+        assert service.current_dossier(investigation) is not None
 
 
 @pytest.mark.asyncio
@@ -813,6 +853,9 @@ def test_cli_version_and_noninteractive_error(monkeypatch) -> None:
     result = runner.invoke(cli_app, ["--topic", "video"])
     assert result.exit_code == 2
     assert "requires a TTY" in result.output
+    demo = runner.invoke(cli_app, ["demo", "--no-animation"])
+    assert demo.exit_code == 2
+    assert "requires a TTY" in demo.output
 
 
 def test_shell_commands_init_list_show_and_export(tmp_path, investigation, monkeypatch) -> None:
@@ -903,6 +946,39 @@ def test_cli_main_and_resume_delegate_to_tui(tmp_path, investigation, monkeypatc
     assert ("resume", investigation.id) in calls
     missing = runner.invoke(cli_app, ["resume", "missing"])
     assert missing.exit_code == 2
+
+
+def test_cli_demo_seeds_temporary_offline_workspace(monkeypatch) -> None:
+    calls: list[tuple[str, object]] = []
+
+    class FakeApp:
+        def __init__(
+            self,
+            root,
+            settings,
+            provider,
+            *,
+            investigation,
+            service,
+            demo_mode,
+        ) -> None:
+            calls.append(("root_exists", root.exists()))
+            calls.append(("investigation", investigation.id))
+            calls.append(("documents", len(service.workspace.list_documents(investigation.id))))
+            calls.append(("demo_mode", demo_mode))
+
+        def run(self):
+            calls.append(("run", True))
+
+    monkeypatch.setattr("ragdoll.cli.RagdollApp", FakeApp)
+    monkeypatch.setattr("ragdoll.cli._require_interactive_tty", lambda: None)
+    result = CliRunner().invoke(cli_app, ["demo", "--no-animation"])
+    assert result.exit_code == 0
+    assert ("root_exists", True) in calls
+    assert ("investigation", DEMO_INVESTIGATION_ID) in calls
+    assert ("documents", 3) in calls
+    assert ("demo_mode", True) in calls
+    assert ("run", True) in calls
 
 
 def test_cli_startup_errors_interrupt_and_doctor(tmp_path, monkeypatch) -> None:

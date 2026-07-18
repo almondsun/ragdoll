@@ -452,6 +452,7 @@ class RagdollApp(App[Investigation | None]):
         investigation: Investigation | None = None,
         service: ResearchService | None = None,
         planner: Planner | None = None,
+        demo_mode: bool = False,
     ) -> None:
         super().__init__()
         self.root = root
@@ -459,6 +460,7 @@ class RagdollApp(App[Investigation | None]):
         self.provider = provider
         self.service = service or ResearchService(root, settings, provider)
         self.planner = planner or Planner(provider)
+        self.demo_mode = demo_mode
         self.initial_topic = topic
         self.investigation = investigation
         self._busy = False
@@ -483,7 +485,11 @@ class RagdollApp(App[Investigation | None]):
         yield Static("", id="command-menu")
         yield Composer(
             id="composer",
-            placeholder="Describe a research topic · / for commands · ? for help",
+            placeholder=(
+                "Offline sample · inspect with /plan /papers /dossier /sources /evidence"
+                if self.demo_mode
+                else "Describe a research topic · / for commands · ? for help"
+            ),
             soft_wrap=True,
             show_line_numbers=False,
             compact=True,
@@ -512,20 +518,32 @@ class RagdollApp(App[Investigation | None]):
     async def _bootstrap(self) -> None:
         try:
             await self._show_splash()
-            details = self.service.inference_details()
-            await self.add_card(
-                "Inference destination",
-                (
-                    f"{details['provider']} · {details['model']} · "
-                    f"{details['endpoint']} · {details['transport']}"
-                ),
-                (
-                    "Research topics, clarification answers, briefs/plans, candidate titles and "
-                    "abstracts are sent for planning and ranking. Evidence passages are sent only "
-                    "after the separate dossier confirmation."
-                ),
-                "warning" if details["transport"] == "remote" else "system",
-            )
+            if self.demo_mode:
+                await self.add_card(
+                    "Offline sample",
+                    "Bundled synthetic evidence · no model, network, or API key",
+                    (
+                        "This temporary workspace exercises the real RAGdoll interface and "
+                        "inspection paths. Generated content is clearly labeled sample data, "
+                        "and the workspace is discarded when the demo exits."
+                    ),
+                    "system",
+                )
+            else:
+                details = self.service.inference_details()
+                await self.add_card(
+                    "Inference destination",
+                    (
+                        f"{details['provider']} · {details['model']} · "
+                        f"{details['endpoint']} · {details['transport']}"
+                    ),
+                    (
+                        "Research topics, clarification answers, briefs/plans, candidate titles "
+                        "and abstracts are sent for planning and ranking. Evidence passages are "
+                        "sent only after the separate dossier confirmation."
+                    ),
+                    "warning" if details["transport"] == "remote" else "system",
+                )
             if self.investigation is not None:
                 await self._resume_flow()
             elif self.initial_topic:
@@ -783,9 +801,8 @@ class RagdollApp(App[Investigation | None]):
             return
         staged = sum(item.staged for item in self.investigation.papers)
         evidence = len(self.service.workspace.list_documents(self.investigation.id))
-        self.query_one("#context", Static).update(
-            f"{self.investigation.status} · {self.settings.provider}"
-        )
+        destination = "offline demo" if self.demo_mode else self.settings.provider
+        self.query_one("#context", Static).update(f"{self.investigation.status} · {destination}")
         self.query_one("#footer", Static).update(
             f"{staged} staged · {evidence} evidence · Enter send · / commands · ? help"
         )
@@ -819,6 +836,17 @@ class RagdollApp(App[Investigation | None]):
         if self._busy:
             return
         name, argument = parse_command(text)
+        if self.demo_mode and (
+            not name
+            or name in {"ask", "purge"}
+            or (name == "dossier" and argument.casefold().startswith("refresh"))
+        ):
+            await self.add_card(
+                "Offline sample is read-only",
+                "Use /plan, /papers, /dossier, /sources, or /evidence demo-chunk-1.",
+                tone="warning",
+            )
+            return
         if self.investigation is None:
             if not name:
                 await self._start_flow(argument)
@@ -885,6 +913,14 @@ class RagdollApp(App[Investigation | None]):
         assert self.investigation is not None
         staged = await self.push_screen_wait(PapersScreen(self.investigation))
         current = {item.paper.id for item in self.investigation.papers if item.staged}
+        if self.demo_mode:
+            await self.add_card(
+                "Offline sample unchanged",
+                "Paper staging changes are discarded in demo mode.",
+                papers_markdown(self.investigation),
+                "system",
+            )
+            return
         for paper_id in sorted(current ^ set(staged)):
             self.investigation = await asyncio.to_thread(
                 self.service.set_staged,

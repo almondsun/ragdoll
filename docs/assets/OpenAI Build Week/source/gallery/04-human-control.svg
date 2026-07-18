@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1500" height="1000" viewBox="0 0 1500 1000">
+  <rect width="1500" height="1000" fill="#0f141b"/>
+  <g font-family="JetBrains Mono, monospace">
+    <text x="80" y="105" fill="#fff3c4" font-size="58" font-weight="700">Human control is the product</text>
+    <text x="84" y="157" fill="#56cfe1" font-size="25">Separate approval boundaries prevent invisible agentic side effects.</text>
+    <rect x="70" y="220" width="860" height="690" rx="28" fill="#17202b" stroke="#425466" stroke-width="3"/>
+    <image x="95" y="245" width="810" height="640" preserveAspectRatio="xMidYMid meet" xlink:href="ragdoll-tui-welcome.png"/>
+    <g transform="translate(995 250)">
+      <rect width="420" height="130" rx="24" fill="#172a3a" stroke="#9b5de5" stroke-width="3"/><circle cx="48" cy="45" r="12" fill="#9b5de5"/><text x="82" y="54" fill="#fff3c4" font-size="25">Approve the plan</text><text x="48" y="96" fill="#aeb6c4" font-size="18">before scholarly search</text>
+      <rect y="175" width="420" height="130" rx="24" fill="#172a3a" stroke="#56cfe1" stroke-width="3"/><circle cx="48" cy="220" r="12" fill="#56cfe1"/><text x="82" y="229" fill="#fff3c4" font-size="25">Curate papers</text><text x="48" y="271" fill="#aeb6c4" font-size="18">before evidence access</text>
+      <rect y="350" width="420" height="130" rx="24" fill="#172a3a" stroke="#ff6b6b" stroke-width="3"/><circle cx="48" cy="395" r="12" fill="#ff6b6b"/><text x="82" y="404" fill="#fff3c4" font-size="25">Consent to PDFs</text><text x="48" y="446" fill="#aeb6c4" font-size="18">with destination disclosed</text>
+      <rect y="525" width="420" height="130" rx="24" fill="#172a3a" stroke="#fff3c4" stroke-width="3"/><circle cx="48" cy="570" r="12" fill="#fff3c4"/><text x="82" y="579" fill="#fff3c4" font-size="25">Inspect evidence</text><text x="48" y="621" fill="#aeb6c4" font-size="18">behind every claim</text>
+    </g>
+  </g>
+</svg>

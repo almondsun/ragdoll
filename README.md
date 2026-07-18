@@ -91,6 +91,38 @@ OpenAlex provides broad scholarly discovery, Crossref canonicalizes DOI metadata
 preprint records. Coverage varies by field, language, venue, and date; a RAGdoll collection is a
 reproducible search result, not the literature itself.
 
+## OpenAI Build Week
+
+RAGdoll was created during the July 2026 OpenAI Build Week submission period. The dated history
+shows the progression from the initial research preview (`a799ab3`) to the evidence workflow
+(`e38a08e`), fullscreen terminal experience (`379d1ee`), and hardened v2.2 research contracts
+(`23e8692`).
+
+Codex was the primary engineering collaborator throughout that work. It accelerated repository
+analysis, implementation, test generation, security review, interface refinement, validation, and
+the reproducible submission media. I retained the product decisions: researchers approve searches
+and evidence acquisition separately; the application owns retrieval and persistence; model output
+must pass Pydantic validation; and citations must resolve to evidence actually supplied for
+synthesis.
+
+The cloud provider uses the OpenAI Responses API and defaults to `gpt-5.6-luna` for interactive
+work and `gpt-5.6-terra` for quality-sensitive synthesis. Those identifiers and the structured-
+output adapter are implemented and contract-tested. The documented acceptance investigation and
+Build Week video were completed locally with Ollama and `qwen3:4b`; they do not simulate or claim a
+successful paid GPT-5.6 request. This distinction is preserved because provider provenance is part
+of RAGdoll's research contract.
+
+Judges can inspect a complete, synthetic sample with no key, model download, or network call:
+
+```bash
+uvx --from git+https://github.com/almondsun/ragdoll ragdoll demo --no-animation
+```
+
+The demo launches the real Textual workspace with an approved plan, staged papers, evidence
+sources, a seven-section dossier, and resolvable passages. It is explicitly labeled as an offline
+sample and discarded on exit. See [JUDGING.md](JUDGING.md) for the shortest test path and the full
+provider setup.
+
 ## Development
 
 ```bash

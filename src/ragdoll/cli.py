@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Annotated
 
@@ -15,10 +16,13 @@ from rich.table import Table
 from . import __version__
 from .config import load_settings
 from .contracts import evidence_fingerprint, staged_fingerprint
+from .demo import seed_demo
 from .export import export_dossier, export_investigation
 from .interactive import InteractiveResearch
-from .providers import ProviderError, make_provider
+from .providers import FakeProvider, ProviderError, make_provider
+from .service import ResearchService
 from .storage import Workspace
+from .tui import RagdollApp
 
 app = typer.Typer(no_args_is_help=False, help="Explainable scholarly research from your terminal.")
 console = Console()
@@ -210,6 +214,28 @@ def doctor() -> None:
             console.print(f"Ollama server: reachable; model: {state}")
         except (httpx.HTTPError, ValueError):
             console.print("Ollama server: unreachable")
+
+
+@app.command()
+def demo(
+    no_animation: Annotated[bool, typer.Option("--no-animation")] = False,
+) -> None:
+    """Open a temporary, offline sample investigation with no API key."""
+    _require_interactive_tty()
+    with tempfile.TemporaryDirectory(prefix="ragdoll-offline-demo-") as directory:
+        root = Path(directory)
+        settings = load_settings(root, provider="ollama", animate=not no_animation)
+        provider = FakeProvider([])
+        service = ResearchService(root, settings, provider)
+        investigation = seed_demo(service)
+        RagdollApp(
+            root,
+            settings,
+            provider,
+            investigation=investigation,
+            service=service,
+            demo_mode=True,
+        ).run()
 
 
 if __name__ == "__main__":

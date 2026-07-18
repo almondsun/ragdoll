@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1500" height="1000" viewBox="0 0 1500 1000">
+  <rect width="1500" height="1000" fill="#0f141b"/>
+  <text x="90" y="105" fill="#fff3c4" font-family="JetBrains Mono, monospace" font-size="56" font-weight="700">A complete research workspace</text>
+  <text x="94" y="155" fill="#56cfe1" font-family="JetBrains Mono, monospace" font-size="25">Conversation-first, keyboard-first, human-controlled.</text>
+  <rect x="70" y="205" width="1360" height="715" rx="24" fill="#17202b" stroke="#9b5de5" stroke-width="4"/>
+  <image x="95" y="230" width="1310" height="665" preserveAspectRatio="xMidYMid meet" xlink:href="ragdoll-tui.png"/>
+</svg>
