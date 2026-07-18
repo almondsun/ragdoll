@@ -1,16 +1,22 @@
-# OpenAI Build Week media kit
+# OpenAI Build Week submission archive
 
-This directory separates upload-ready deliverables from production material:
+This directory preserves the published submission media and its production material:
 
 - `gallery/` — seven numbered Devpost images plus their captions.
 - `video/` — final YouTube MP4, thumbnail, and optional SRT caption track.
-- `copy/` — Devpost fields, YouTube copy, narration notes, organizer request, and checklists.
+- `copy/` — archived Devpost copy, YouTube metadata, and narration notes.
 - `production/frames/` — reproducible captures from the real saved RAGdoll investigation.
 - `source/gallery/` — editable SVGs, product captures, and generated background source.
 
-Start with `copy/UPLOAD-CHECKLIST.md`. Nothing under `production/` or `source/` needs to be uploaded.
+Nothing under `production/` or `source/` was uploaded directly.
 
-## Upload-ready video
+Published submission:
+
+- Devpost: https://devpost.com/software/ragdoll-xfwzms
+- YouTube: https://www.youtube.com/watch?v=aytzIq-5S5k
+- Repository: https://github.com/almondsun/ragdoll
+
+## Published video archive
 
 - `video/ragdoll-build-week-demo.mp4`
 - `video/youtube-thumbnail.png`

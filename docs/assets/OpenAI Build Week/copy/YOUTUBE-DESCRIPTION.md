@@ -1,8 +1,12 @@
-# Suggested title
+# Published YouTube metadata
+
+https://www.youtube.com/watch?v=aytzIq-5S5k
+
+## Title
 
 RAGdoll — Explainable Scholarly Research with Codex | OpenAI Build Week
 
-# Description
+## Description
 
 RAGdoll turns an ambiguous research question into an explainable, cited literature dossier while
 keeping search approval, paper curation, evidence acquisition, and claim inspection in the
@@ -26,11 +30,3 @@ No-key judge demo:
 Documentation: https://almondsun.github.io/ragdoll/
 
 OpenAI Build Week category: Work & Productivity
-
-# Publication settings
-
-- Visibility: **Public**
-- Language: **English**
-- Captions: upload `ragdoll-build-week-demo.srt`
-- Audience: not made for children
-- Paid promotion: no

@@ -145,7 +145,7 @@ GPT-5.6 request was attempted but blocked by API quota.
 
 ## Video demo link
 
-Paste the final public `https://www.youtube.com/watch?v=...` URL here after upload.
+https://www.youtube.com/watch?v=aytzIq-5S5k
 
 ## Additional information
 
@@ -153,7 +153,6 @@ Paste the final public `https://www.youtube.com/watch?v=...` URL here after uplo
 - Country of residence: **Colombia**
 - Category: **Work & Productivity**
 - Repository URL: `https://github.com/almondsun/ragdoll`
-- `/feedback` session ID: `019f62bf-b2ae-7111-aef2-57baf2ff8414`
 
 **Project access and judge instructions**
 
